@@ -1,0 +1,12 @@
+{
+  "name": "8vcminer",
+  "version": "0.4.0",
+  "private": true,
+  "description": "8vcminer — agentic mineral-exploration demo (MapLibre + Claude)",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>8vcminer · Mineral Exploration System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ============== control / log rail ============== -->
+    <aside id="sidebar">
+      <header class="brand">
+        <div class="logo">◬</div>
+        <div class="brand-txt">
+          <h1>8vcminer</h1>
+          <p>mineral exploration system · v0.4</p>
+        </div>
+        <div class="brand-stat"><span class="dot"></span>ONLINE</div>
+      </header>
+
+      <section class="block">
+        <div class="block-head">Mission parameters</div>
+        <label class="field">
+          <span>Target commodity</span>
+          <select id="mineral">
+            <option value="copper">Copper — Cu</option>
+            <option value="gold">Gold — Au</option>
+            <option value="lithium">Lithium — Li</option>
+            <option value="rare_earth">Rare Earths — REE</option>
+            <option value="nickel">Nickel — Ni</option>
+            <option value="uranium">Uranium — U</option>
+          </select>
+        </label>
+        <div class="btn-row">
+          <button id="draw" class="btn">Define window</button>
+          <button id="begin" class="btn primary" disabled>Run analysis</button>
+        </div>
+      </section>
+
+      <section class="block">
+        <details class="adv">
+          <summary>Inference backend</summary>
+          <label class="field">
+            <span>Model</span>
+            <select id="model">
+              <option value="claude-haiku-4-5">Claude Haiku 4.5 — low latency</option>
+              <option value="claude-sonnet-4-6">Claude Sonnet 4.6 — balanced</option>
+              <option value="claude-opus-4-8">Claude Opus 4.8 — maximum</option>
+            </select>
+          </label>
+          <p class="note" id="backend-note">Checking backend…</p>
+        </details>
+      </section>
+
+      <section class="log-block">
+        <div class="block-head">Agent reasoning log</div>
+        <div id="log"></div>
+      </section>
+    </aside>
+
+    <!-- ============== map + telemetry ============== -->
+    <main id="map-wrap">
+      <div id="map"></div>
+
+      <!-- top telemetry strip -->
+      <div id="statusbar">
+        <div class="seg"><label>System</label><b id="sb-system">8VCMINER</b></div>
+        <div class="seg"><label>Commodity</label><b id="sb-commodity">Copper — Cu</b></div>
+        <div class="seg"><label>Scale</label><b id="sb-scale">STANDBY</b></div>
+        <div class="seg"><label>Window</label><b id="sb-window">—</b></div>
+        <div class="seg"><label>Level</label><b id="sb-level">0 / 5</b></div>
+        <div class="seg"><label>Confidence</label><b id="sb-conf">—</b></div>
+        <div class="seg grow"><label>Active target</label><b id="sb-target">—</b></div>
+        <div class="seg"><label>Cursor</label><b id="sb-coords">—</b></div>
+        <div class="seg"><label>Mission clock</label><b id="sb-clock" class="mono">T+00:00</b></div>
+      </div>
+
+      <!-- minimal targeting crosshair -->
+      <div id="reticle">
+        <span class="cross-h"></span><span class="cross-v"></span>
+        <span class="box"></span>
+        <span class="t tl"></span><span class="t tr"></span>
+        <span class="t bl"></span><span class="t br"></span>
+        <span class="scan"></span>
+      </div>
+
+      <div id="hint" class="hint">Click-drag to define a search window</div>
+
+      <!-- grid telemetry panel -->
+      <div id="telemetry" class="tpanel">
+        <div class="tp-head"><span>Grid telemetry</span><span id="tp-sub" class="mono">—</span></div>
+        <div class="tp-scroll">
+          <table>
+            <thead id="tp-thead"></thead>
+            <tbody id="tp-tbody"></tbody>
+          </table>
+        </div>
+        <div class="tp-foot"><span>ranked by composite prospectivity</span><span id="tp-count" class="mono"></span></div>
+      </div>
+
+      <!-- final result -->
+      <div id="result" class="result-card">
+        <button id="resultClose" class="r-close">×</button>
+        <div class="r-tag">▣ TARGET ACQUIRED</div>
+        <div class="r-title"></div>
+        <div class="r-grid"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/agent.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
