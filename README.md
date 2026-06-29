@@ -51,15 +51,42 @@ each commodity (e.g. the Chilean Andes for copper, the Lithium Triangle for Li)
 plus fractal noise for texture — so the zoom-in converges on a believable target
 and selecting the right continent lands you in the right belt.
 
-## Run it
+## Live
 
-It's a static site. Serve the folder over HTTP (the satellite tiles and the
-Anthropic API both need a real origin):
+**https://8vcminer.up.railway.app** — deployed on Railway, auto-deploys on every
+push to `main` of `kevinniechen/8vcminer`.
+
+## Run it locally
+
+It's a Node server (serves the site **and** proxies Claude so the key stays
+server-side). Node 18+.
 
 ```bash
 cd /Users/kevin/Code/gis
-python3 -m http.server 8000
-# open http://localhost:8000
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env   # optional; omit to run the local sim
+npm start                                     # → http://localhost:3000
+```
+
+Without a key (or if you just open the files statically) the agent runs the
+built-in deterministic backend so the system still operates.
+
+## Deployment (Railway, GitHub-connected)
+
+- The Railway service is connected to the GitHub repo, so `git push` to `main`
+  triggers a build + deploy automatically — no extra step.
+- The Anthropic key lives only as the Railway service variable
+  `ANTHROPIC_API_KEY` (and locally in `.env`). It is **never** in the repo or
+  shipped to the browser; the browser calls the same-origin `/api/messages`
+  proxy. `.env` and `js/config.local.js` are git-ignored.
+- The proxy caps `max_tokens`, restricts the model list, and rate-limits per IP
+  (`RATE_LIMIT_PER_MIN`, default 40) to bound abuse of the public endpoint.
+
+Redeploy / manage:
+
+```bash
+railway status            # service + latest deployment
+railway logs              # build/deploy logs
+railway variable list     # service variables
 ```
 
 ## Files
