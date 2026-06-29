@@ -27,12 +27,35 @@ const START_BOXES = {
   uranium:    { w: -112, s: 52, e: -95, n: 62 },
 };
 
+const WORLD = { center: [10, 25], zoom: 1.4 };
+
+/* datasets shown in the Data sources panel */
+const DATASETS = {
+  active: [
+    { name: "USGS USMIN", tag: "deposits", desc: "US mineral deposit & mine features digitized from USGS topographic maps. Tags US known-deposit evidence." },
+    { name: "Global critical-mineral districts", tag: "deposits", desc: "Curated major producing & known deposits worldwide across Cu, Au, Li, REE, Ni, U." },
+    { name: "Macrostrat bedrock geology", tag: "live api", desc: "Surface lithology + chronostratigraphic age sampled at each window centroid and the final site." },
+    { name: "Esri World Imagery", tag: "basemap", desc: "Global satellite basemap, desaturated to a dark operational basemap." },
+    { name: "Prospectivity signal model", tag: "synthetic", desc: "Permissive / look-alike geology field (belt favourability + fractal texture) driving the novel-signal channel." },
+  ],
+  soon: [
+    { name: "USGS MRDS", desc: "Full Mineral Resources Data System — tens of thousands of occurrences with commodity, deposit type & production." },
+    { name: "USGS SGMC", desc: "State Geologic Map Compilation — detailed lithology & structure polygons across the US." },
+    { name: "ASTER / Sentinel-2 alteration", desc: "Multispectral mineral mapping — clay, iron-oxide and silica alteration footprints." },
+    { name: "Gravity & magnetics", desc: "EMAG2 magnetic and WGM2012 gravity grids for crustal architecture and intrusive targeting." },
+    { name: "Copernicus / SRTM DEM", desc: "Terrain elevation and derived structural lineaments." },
+    { name: "Sentinel-1 InSAR", desc: "Surface deformation and structural mapping." },
+    { name: "National geochemical surveys", desc: "Stream-sediment & soil geochemistry pathfinder anomalies." },
+    { name: "Public drillhole assays", desc: "Open intercept databases for grade continuity at deposit scale." },
+  ],
+};
+
 const $ = (id) => document.getElementById(id);
 const els = {};
 
 let map;
 let currentBBox = null;
-let drawMode = false, drawing = false, drawStart = null, running = false;
+let drawing = false, drawStart = null, running = false;
 let runStart = 0, clockTimer = null;
 
 function getBias() { return localStorage.getItem("discovery_bias") || "balanced"; }
@@ -106,7 +129,7 @@ function initMap() {
       },
       layers: [{ id: "sat", type: "raster", source: "sat" }],
     },
-    center: [-69, -24], zoom: 3, maxZoom: 13,
+    center: WORLD.center, zoom: WORLD.zoom, minZoom: 1, maxZoom: 13,
   });
 
   map.on("load", () => {
@@ -182,11 +205,14 @@ function initMap() {
     const m = MINERALS[els.mineralSel.value];
     setHeatRamp(m.color);
     refreshDeposits(m, getBias());
-    applyStartBox();
+    applyStartBox(false); // set a default window but stay zoomed out on first load
+    map.getCanvas().style.cursor = "crosshair";
+    els.hint.classList.add("show");
   });
 
+  // draw is always available — click-drag anywhere defines a window (no mode toggle)
   map.on("mousedown", (e) => {
-    if (!drawMode || running) return;
+    if (running) return;
     e.preventDefault(); drawing = true; drawStart = e.lngLat; map.dragPan.disable();
   });
   map.on("mousemove", (e) => {
@@ -200,10 +226,10 @@ function initMap() {
     if (Math.abs(b.e - b.w) > 0.05 && Math.abs(b.n - b.s) > 0.05) {
       currentBBox = b;
       setData("bbox", rectFeature(b));
-      exitDrawMode();
+      els.hint.classList.remove("show");
       els.begin.disabled = false;
       els.sbWindow.textContent = `${spanKm(b)} km`;
-    } else exitDrawMode();
+    }
   });
 }
 
@@ -368,7 +394,7 @@ function showReticle(on) { els.reticle.classList.toggle("show", on); }
 async function run() {
   if (!currentBBox || running) return;
   running = true;
-  els.begin.disabled = els.draw.disabled = els.mineralSel.disabled = els.biasSel.disabled = true;
+  els.begin.disabled = els.reset.disabled = els.mineralSel.disabled = els.biasSel.disabled = true;
   els.result.classList.remove("show");
   els.evidence.classList.remove("show");
   els.log.innerHTML = "";
@@ -427,7 +453,7 @@ async function run() {
   await finalize(bbox, mineral, lastDecision);
   stopClock();
   running = false;
-  els.begin.disabled = els.draw.disabled = els.mineralSel.disabled = els.biasSel.disabled = false;
+  els.begin.disabled = els.reset.disabled = els.mineralSel.disabled = els.biasSel.disabled = false;
 }
 
 /* ---- final site -------------------------------------------------------- */
@@ -464,13 +490,11 @@ async function finalize(b, mineral, decision) {
   els.result.classList.add("show");
 }
 
-/* ---- draw mode & start box -------------------------------------------- */
-function enterDrawMode() { drawMode = true; map.getCanvas().style.cursor = "crosshair"; els.draw.classList.add("active"); els.hint.classList.add("show"); }
-function exitDrawMode() { drawMode = false; map.getCanvas().style.cursor = ""; els.draw.classList.remove("active"); els.hint.classList.remove("show"); }
-function applyStartBox() {
+/* ---- start box --------------------------------------------------------- */
+function applyStartBox(fly = true) {
   currentBBox = { ...START_BOXES[els.mineralSel.value] };
   setData("bbox", rectFeature(currentBBox));
-  flyToBox(currentBBox, 0);
+  if (fly) flyToBox(currentBBox, 0);
   els.begin.disabled = false;
   els.sbWindow.textContent = `${spanKm(currentBBox)} km`;
 }
@@ -481,7 +505,8 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 window.addEventListener("DOMContentLoaded", () => {
   Object.assign(els, {
     mineralSel: $("mineral"), biasSel: $("bias"), modelSel: $("model"), backendNote: $("backend-note"),
-    draw: $("draw"), begin: $("begin"), log: $("log"),
+    reset: $("reset"), begin: $("begin"), log: $("log"),
+    datasetsBtn: $("datasets-btn"), datasets: $("datasets"),
     reticle: $("reticle"), hint: $("hint"),
     sbBias: $("sb-bias"), sbCommodity: $("sb-commodity"), sbScale: $("sb-scale"), sbWindow: $("sb-window"),
     sbLevel: $("sb-level"), sbConf: $("sb-conf"), sbTarget: $("sb-target"),
@@ -524,9 +549,36 @@ window.addEventListener("DOMContentLoaded", () => {
   document.documentElement.style.setProperty("--commodity", m0.color);
   els.sbCommodity.textContent = `${m0.name} — ${m0.symbol}`;
 
-  els.draw.addEventListener("click", () => { if (!running) (drawMode ? exitDrawMode() : enterDrawMode()); });
+  els.reset.addEventListener("click", () => {
+    if (running) return;
+    map.flyTo({ center: WORLD.center, zoom: WORLD.zoom, duration: 900, essential: true });
+    els.hint.classList.add("show");
+  });
   els.begin.addEventListener("click", run);
   $("resultClose").addEventListener("click", () => els.result.classList.remove("show"));
 
+  // zoom controls
+  $("zin").addEventListener("click", () => map.zoomIn());
+  $("zout").addEventListener("click", () => map.zoomOut());
+  $("zworld").addEventListener("click", () => map.flyTo({ center: WORLD.center, zoom: WORLD.zoom, duration: 900, essential: true }));
+
+  // data-sources modal
+  renderDatasets();
+  const openDS = () => els.datasets.classList.add("show");
+  const closeDS = () => els.datasets.classList.remove("show");
+  els.datasetsBtn.addEventListener("click", openDS);
+  $("datasets-close").addEventListener("click", closeDS);
+  els.datasets.addEventListener("click", (e) => { if (e.target === els.datasets) closeDS(); });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDS(); });
+
   initMap();
 });
+
+function renderDatasets() {
+  $("ds-active").innerHTML = DATASETS.active.map((d) =>
+    `<div class="ds-item"><div class="ds-row"><b>${d.name}</b><span class="ds-tag">${d.tag}</span></div><p>${d.desc}</p></div>`
+  ).join("");
+  $("ds-soon").innerHTML = DATASETS.soon.map((d) =>
+    `<div class="ds-item soon"><div class="ds-row"><b>${d.name}</b><span class="ds-tag soon">soon</span></div><p>${d.desc}</p></div>`
+  ).join("");
+}

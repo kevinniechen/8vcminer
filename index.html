@@ -45,9 +45,10 @@
           </select>
         </label>
         <div class="btn-row">
-          <button id="draw" class="btn">Define window</button>
+          <button id="reset" class="btn">Reset view</button>
           <button id="begin" class="btn primary" disabled>Run analysis</button>
         </div>
+        <button id="datasets-btn" class="btn linklike">▤ Data sources &amp; roadmap</button>
       </section>
 
       <section class="block">
@@ -97,7 +98,14 @@
         <span class="scan"></span>
       </div>
 
-      <div id="hint" class="hint">Click-drag to define a search window</div>
+      <div id="hint" class="hint">Click-drag anywhere to define a search window · scroll or use +/− to zoom</div>
+
+      <!-- zoom controls -->
+      <div id="mapctrl">
+        <button id="zin" title="Zoom in">+</button>
+        <button id="zout" title="Zoom out">−</button>
+        <button id="zworld" title="Zoom to world">◍</button>
+      </div>
 
       <!-- grid telemetry panel -->
       <div id="telemetry" class="tpanel">
@@ -118,6 +126,23 @@
       <div id="legend" class="legend">
         <span class="lg-dot"></span>
         <span>Known deposit · USMIN + global districts</span>
+      </div>
+
+      <!-- data sources / roadmap modal -->
+      <div id="datasets" class="modal">
+        <div class="modal-card">
+          <button id="datasets-close" class="modal-close">×</button>
+          <div class="modal-title">Data sources</div>
+          <div class="modal-sub">Layers feeding the 8vcminer prospectivity engine</div>
+          <div class="ds-group">
+            <div class="ds-h"><span class="ds-led on"></span>Active — loaded</div>
+            <div id="ds-active" class="ds-list"></div>
+          </div>
+          <div class="ds-group">
+            <div class="ds-h"><span class="ds-led"></span>Roadmap — coming soon</div>
+            <div id="ds-soon" class="ds-list"></div>
+          </div>
+        </div>
       </div>
 
       <!-- final result -->
