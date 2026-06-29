@@ -58,9 +58,10 @@ const Agent = (() => {
       `SEARCH WINDOW: ${bbox.w.toFixed(2)}°,${bbox.s.toFixed(2)}° to ${bbox.e.toFixed(2)}°,${bbox.n.toFixed(2)}°\n` +
       `DISCOVERY BIAS: ${b.label} — ${b.blurb}.\n` +
       macroLine + `\n` + nearLine + `\n\n` +
-      `The window is a 4×4 grid. Each cell reports two SEPARATE 0–100 channels —\n` +
-      `KNOWN (proximity to catalogued deposits) and SIGNAL (permissive / look-alike\n` +
-      `geology) — plus the bias-weighted COMPOSITE:\n` +
+      `The window is a 4×4 grid. Each cell reports two SEPARATE, REAL 0–100 channels —\n` +
+      `KNOWN (proximity to catalogued USMIN/global deposits) and SIGNAL (host-rock\n` +
+      `favourability from live Macrostrat geology, matched to the deposit model) —\n` +
+      `plus the bias-weighted COMPOSITE:\n` +
       rows +
       `\n\nApply the discovery bias:\n` +
       `  • Conservative → favour high KNOWN (brownfield, near production).\n` +
@@ -77,8 +78,8 @@ const Agent = (() => {
   const SYSTEM =
     "You are the 8vcminer agent, an autonomous mineral-exploration AI. You vector " +
     "toward economic ore deposits by interpreting layered geoscience data. You keep " +
-    "two channels distinct: KNOWN evidence (catalogued deposits) versus NOVEL signal " +
-    "(permissive look-alike geology), and you obey the operator's discovery bias. You " +
+    "two channels distinct: KNOWN evidence (catalogued deposits) versus geological SIGNAL " +
+    "(real host-rock favourability from Macrostrat), and you obey the operator's discovery bias. You " +
     "reason like an economic geologist, commodity-specific and scale-aware. Voice: " +
     "terse, technical, mission-control field log. No preamble, no markdown.";
 
@@ -157,7 +158,7 @@ const Agent = (() => {
     const lines = [
       `${pick(["Scanning", "Integrating", "Resolving", "Vectoring on"], seed)} ${scale.key.toLowerCase()} window · bias=${b.label.toLowerCase()} for ${mineral.name}.`,
       `KNOWN evidence: nearest catalogued deposit ${nearTxt}; cell ${best} known=${(bc.known * 100) | 0}.`,
-      `NOVEL signal: permissive host ${macroTxt}; cell ${best} signal=${(bc.signal * 100) | 0}.`,
+      `SIGNAL: Macrostrat host ${macroTxt}; cell ${best} favourability=${(bc.signal * 100) | 0}.`,
       type === "known"
         ? `Brownfield mandate → committing to high-endowment cell ${best}.`
         : `Look-alike ground away from mined zones → committing greenfield cell ${best}.`,

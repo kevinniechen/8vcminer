@@ -6,12 +6,14 @@
    the rest are tagged "Global" (major producing districts from public literature
    / company resource statements). Coordinates are approximate district centroids.
 
-   Two derived fields drive the system, kept deliberately SEPARATE:
-     • knownField   — sharp kernels on actual deposits → "what's already known"
-     • signalField  — broad permissive-terrain + fractal texture → "novel signal"
-                      (favorable geology that also lights up look-alike ground
-                       away from any known deposit)
+   Two REAL channels drive the system, kept deliberately SEPARATE:
+     • knownField        — proximity to actual catalogued deposits → "known evidence"
+     • lithFavorability  — match of the cell's live Macrostrat host lithology to the
+                           commodity's favoured host rocks → "geological signal"
+                           (high where the host geology is right but no deposit is
+                           catalogued = a genuine greenfield look-alike)
    Discovery-bias modes combine them differently (see composite()).
+   No synthetic / fabricated field is used.
    ============================================================================= */
 
 const KNOWN_DEPOSITS = {
@@ -125,16 +127,59 @@ function knownField(lat, lng, mineral) {
   return p;
 }
 
-/* broad permissive terrain + fractal texture — "novel signal" */
-function signalField(lat, lng, mineral) {
-  let belt = 0;
-  for (const d of depsFor(mineral)) {
-    const dLat = lat - d.lat, dLng = (lng - d.lng) * Math.cos((lat * Math.PI) / 180);
-    belt += _depW(d) * Math.exp(-(dLat * dLat + dLng * dLng) / (2 * 5.5 * 5.5));
-  }
-  const seed = mineral.id.length * 7.3;
-  const n = _fbm(lng * 0.5 + seed, lat * 0.5 - seed); // ~0..1 look-alike texture
-  return belt * (0.7 + 0.3 * n) + 0.55 * n;
+/* ---- geological signal: real host-rock favourability (Macrostrat) -------
+   Each commodity has a deposit-model-driven set of favoured host lithologies.
+   We match the live Macrostrat lithology/name string for a cell and return a
+   0..1 favourability. This is REAL data, not a synthetic field. */
+const HOST_AFFINITY = {
+  copper: [ // porphyry + sediment-hosted
+    [/(intermediate|granodiorit|diorit|andesit|dacit|porphyr|tonalit|monzonit)/, 1.0],
+    [/(volcanic|intrusive|igneous|granit|felsic)/, 0.72],
+    [/(sandstone|shale|clastic|sediment)/, 0.5],
+    [/(carbonate|limestone|dolo)/, 0.38],
+  ],
+  gold: [ // orogenic + epithermal
+    [/(greenstone|mafic volcan|metavolcan|basalt|komatiit)/, 1.0],
+    [/(schist|metased|slate|phyllite|turbidite|greywacke|quartz)/, 0.85],
+    [/(rhyolit|dacit|andesit|felsic volcan|tuff)/, 0.78],
+    [/(granit|intrusive|igneous)/, 0.55],
+    [/(sandstone|conglomerate|sediment)/, 0.45],
+  ],
+  lithium: [ // brine + pegmatite + volcano-sedimentary clay
+    [/(pegmatit|leucogranit|aplite)/, 1.0],
+    [/(evaporit|playa|salt|brine|lacustrine|saline)/, 1.0],
+    [/(rhyolit|tuff|ash|felsic volcan)/, 0.78],
+    [/(granit|felsic intrusive)/, 0.68],
+    [/(clay|mudstone|alluvi|sediment)/, 0.52],
+  ],
+  rare_earth: [ // carbonatite/alkaline + laterite
+    [/(carbonatit|alkalin|syenit|nephelin|phonolit|ijolite|foid)/, 1.0],
+    [/(laterit|regolith|weather)/, 0.8],
+    [/(granit|pegmatit|gneiss|felsic intrusive)/, 0.58],
+    [/(intrusive|igneous)/, 0.44],
+  ],
+  nickel: [ // magmatic sulphide + laterite
+    [/(ultramafic|komatiit|dunit|peridotit|serpentin|pyroxenit)/, 1.0],
+    [/(mafic|gabbro|basalt|norite|troctolite)/, 0.85],
+    [/(laterit|regolith|weather)/, 0.7],
+    [/(intrusive|igneous|volcanic)/, 0.44],
+  ],
+  uranium: [ // sandstone-hosted + unconformity + granite
+    [/(sandstone|arkose|conglomerate|arenite)/, 1.0],
+    [/(unconformity|regolith)/, 0.8],
+    [/(granit|felsic intrusive|rhyolit|pegmatit)/, 0.74],
+    [/(mudstone|shale|clastic|sediment)/, 0.5],
+  ],
+};
+
+/* macro: a Macrostrat result {ok, lith, name}. Returns 0..1. */
+function lithFavorability(mineralId, macro) {
+  if (!macro || !macro.ok) return 0.05;              // ocean / no geologic-map coverage
+  const hay = ((macro.lith || "") + " " + (macro.name || "")).toLowerCase();
+  if (!hay.trim()) return 0.2;                       // mapped, but unit carries no lithology
+  let best = 0.2;                                    // a rock exists but isn't a favoured host
+  for (const [re, w] of (HOST_AFFINITY[mineralId] || [])) if (w > best && re.test(hay)) best = w;
+  return best;
 }
 
 function nearestDeposits(lat, lng, mineral, n = 3) {
@@ -144,18 +189,15 @@ function nearestDeposits(lat, lng, mineral, n = 3) {
     .slice(0, n);
 }
 
-/* averaged known/signal over a cell */
-function sampleFields(b, mineral) {
+/* averaged known-deposit proximity over a cell → 0..1 */
+function knownCell(b, mineral) {
   const offs = [0.25, 0.5, 0.75];
-  let k = 0, s = 0, sp = 0;
+  let k = 0;
   for (const fy of offs) for (const fx of offs) {
     const lng = b.w + (b.e - b.w) * fx, lat = b.s + (b.n - b.s) * fy;
     k += knownField(lat, lng, mineral);
-    const sv = signalField(lat, lng, mineral);
-    s += sv; if (sv > sp) sp = sv;
   }
-  const n = offs.length * offs.length;
-  return { known: k / n, signal: s / n, signalPeak: sp };
+  return Math.min(1, k / (offs.length * offs.length));
 }
 
 /* discovery-bias ranking. known/signal are normalized 0..1 per window. */

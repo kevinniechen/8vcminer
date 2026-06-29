@@ -1,12 +1,11 @@
 /* =============================================================================
    app.js — map, window selection, scan, telemetry, evidence panel, zoom loop
    -----------------------------------------------------------------------------
-   Scoring is split into two channels that are kept visible throughout:
+   Scoring is split into two REAL channels that are kept visible throughout:
      • KNOWN  — proximity to catalogued deposits (USMIN + global districts)
-     • SIGNAL — permissive / look-alike geology (the synthetic prospectivity field)
+     • SIGNAL — host-rock favourability from live Macrostrat geology per cell
    The DISCOVERY BIAS (conservative / balanced / frontier) decides how they're
-   combined into the ranked COMPOSITE. Macrostrat supplies real host-rock
-   evidence for each window.
+   combined into the ranked COMPOSITE. No synthetic / fabricated field is used.
    ============================================================================= */
 
 const SCALES = [
@@ -34,9 +33,8 @@ const DATASETS = {
   active: [
     { name: "USGS USMIN", tag: "deposits", desc: "US mineral deposit & mine features digitized from USGS topographic maps. Tags US known-deposit evidence." },
     { name: "Global critical-mineral districts", tag: "deposits", desc: "Curated major producing & known deposits worldwide across Cu, Au, Li, REE, Ni, U." },
-    { name: "Macrostrat bedrock geology", tag: "live api", desc: "Surface lithology + chronostratigraphic age sampled at each window centroid and the final site." },
+    { name: "Macrostrat bedrock geology", tag: "live api", desc: "Surface lithology + chronostratigraphic age sampled per grid cell. Drives the host-rock evidence AND the geological-favourability signal (matched to each commodity's deposit model)." },
     { name: "Esri World Imagery", tag: "basemap", desc: "Global satellite basemap, desaturated to a dark operational basemap." },
-    { name: "Prospectivity signal model", tag: "synthetic", desc: "Permissive / look-alike geology field (belt favourability + fractal texture) driving the novel-signal channel." },
   ],
   soon: [
     { name: "USGS MRDS", desc: "Full Mineral Resources Data System — tens of thousands of occurrences with commodity, deposit type & production." },
@@ -250,30 +248,28 @@ function fmtLL(lat, lng) {
 }
 const cellCentroid = (c) => [(c.bounds.s + c.bounds.n) / 2, (c.bounds.w + c.bounds.e) / 2];
 
-/* ---- grid build + dual-channel scoring --------------------------------- */
-function buildGrid(b, mineral, bias) {
+/* ---- grid build + dual-channel scoring (both channels REAL) -----------
+   KNOWN   = proximity to catalogued deposits (USMIN + global districts)
+   SIGNAL  = host-rock favourability from live Macrostrat geology per cell  */
+async function buildGrid(b, mineral, bias) {
   const cw = (b.e - b.w) / GRID_N, ch = (b.n - b.s) / GRID_N;
-  const cells = []; let maxK = 1e-9, maxS = 1e-9;
+  const cells = [];
   for (let r = 0; r < GRID_N; r++) {
     for (let c = 0; c < GRID_N; c++) {
       const cb = { w: b.w + c * cw, e: b.w + (c + 1) * cw, s: b.n - (r + 1) * ch, n: b.n - r * ch };
-      const f = sampleFields(cb, mineral);
-      cells.push({ index: r * GRID_N + c, bounds: cb, rawK: f.known, rawS: f.signal });
-      if (f.known > maxK) maxK = f.known;
-      if (f.signal > maxS) maxS = f.signal;
+      cells.push({ index: r * GRID_N + c, bounds: cb, known: knownCell(cb, mineral) });
     }
   }
+  // real geology for every cell centroid, in parallel (cached server- & client-side)
+  const macros = await Promise.all(cells.map((c) => { const [lat, lng] = cellCentroid(c); return fetchMacro(lat, lng); }));
   let maxC = 1e-9;
-  for (const cell of cells) {
-    cell.known = clamp01(cell.rawK / maxK);
-    cell.signal = clamp01(cell.rawS / maxS);
-    cell.compRaw = composite(cell.known, cell.signal, bias);
-    if (cell.compRaw > maxC) maxC = cell.compRaw;
-  }
-  for (const cell of cells) {
-    cell.composite = clamp01(cell.compRaw / maxC);
-    cell.score = cell.composite; // drives heat ramp
-  }
+  cells.forEach((cell, i) => {
+    cell.macro = macros[i];
+    cell.signal = lithFavorability(mineral.id, macros[i]); // 0..1, real
+    cell.composite = composite(cell.known, cell.signal, bias); // 0..1
+    if (cell.composite > maxC) maxC = cell.composite;
+  });
+  for (const cell of cells) cell.score = clamp01(cell.composite / maxC); // normalized for heat
   return cells;
 }
 
@@ -304,7 +300,7 @@ function renderTelemetry(cells, scale) {
   els.tpCount.textContent = `${cells.length} cells`;
   els.tpThead.innerHTML =
     `<tr><th>cell</th><th>comp</th><th title="Known evidence — proximity to catalogued deposits">known</th>` +
-    `<th title="Novel signal — permissive / look-alike geology">signal</th></tr>`;
+    `<th title="Geological signal — host-rock favourability from live Macrostrat geology">signal</th></tr>`;
   const ranked = [...cells].sort((a, b) => b.composite - a.composite);
   els.tpTbody.innerHTML = ranked.map((c) => {
     const cp = Math.round(c.composite * 100), k = Math.round(c.known * 100), s = Math.round(c.signal * 100);
@@ -320,13 +316,11 @@ function markWinnerRow(idx) {
 }
 
 /* ---- evidence panel: Known evidence vs Novel signal -------------------- */
-function updateEvidence(cell, mineral, macro, decision) {
+function updateEvidence(cell, mineral, decision) {
   const [lat, lng] = cellCentroid(cell);
   const near = nearestDeposits(lat, lng, mineral, 2);
   const gap = near[0] ? Math.round(near[0].distKm) : null;
-  const host = macro && macro.ok
-    ? [macro.name, macro.lith, macro.age && "(" + macro.age + ")"].filter(Boolean).join(" ")
-    : "no Macrostrat unit returned";
+  const host = macroSummary(cell.macro) || "no geologic-map coverage (offshore?)";
   const nearHtml = near.length
     ? near.map((d) => `<li><b>${d.n}</b> · ${d.status} · <span class="src">${d.src}</span> · ${Math.round(d.distKm)} km</li>`).join("")
     : `<li class="none">none catalogued in range</li>`;
@@ -343,22 +337,30 @@ function updateEvidence(cell, mineral, macro, decision) {
       `<div class="ev-kv"><label>Host (Macrostrat)</label><b>${host}</b></div>` +
     `</div>` +
     `<div class="ev-sec novel">` +
-      `<div class="ev-t"><i class="dot s"></i>Novel signal <em>${Math.round(cell.signal * 100)}</em></div>` +
+      `<div class="ev-t"><i class="dot s"></i>Geological signal <em>${Math.round(cell.signal * 100)}</em></div>` +
+      `<div class="ev-kv"><label>Host favourability</label><b>${cell.signal >= 0.7 ? "favourable host" : cell.signal >= 0.4 ? "permissive" : "unfavourable"}</b></div>` +
       `<div class="ev-kv"><label>Greenfield gap</label><b>${gap == null ? "—" : gap + " km to nearest known"}</b></div>` +
-      `<div class="ev-kv"><label>Permissive terrain</label><b>${cell.signal > 0.55 ? "yes — look-alike host" : "moderate"}</b></div>` +
     `</div>`;
 }
 
-/* ---- Macrostrat fetch -------------------------------------------------- */
-async function fetchMacrostrat(lat, lng) {
+/* ---- Macrostrat fetch (real host geology, client-cached) --------------- */
+const _macroCache = new Map();
+async function fetchMacro(lat, lng) {
+  const key = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  if (_macroCache.has(key)) return _macroCache.get(key);
+  let out = { ok: false };
   try {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 7000);
     const r = await fetch(`/api/macrostrat?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}`, { signal: ctrl.signal });
     clearTimeout(to);
-    if (!r.ok) return { ok: false };
-    return await r.json();
-  } catch { return { ok: false }; }
+    if (r.ok) out = await r.json();
+  } catch { /* keep {ok:false} */ }
+  _macroCache.set(key, out);
+  return out;
+}
+function macroSummary(m) {
+  return m && m.ok ? [m.name, m.lith, m.age && "(" + m.age + ")"].filter(Boolean).join(" ") : null;
 }
 
 /* ---- camera ------------------------------------------------------------ */
@@ -394,7 +396,7 @@ function showReticle(on) { els.reticle.classList.toggle("show", on); }
 async function run() {
   if (!currentBBox || running) return;
   running = true;
-  els.begin.disabled = els.reset.disabled = els.mineralSel.disabled = els.biasSel.disabled = true;
+  els.begin.disabled = els.mineralSel.disabled = els.biasSel.disabled = true;
   els.result.classList.remove("show");
   els.evidence.classList.remove("show");
   els.log.innerHTML = "";
@@ -419,16 +421,17 @@ async function run() {
     setStatus(scale, level, bbox);
     await flyToBox(bbox, level === 0 ? 1600 : 2200);
 
-    const cells = buildGrid(bbox, mineral, bias);
+    log(`${scale.key} · ${scale.km} · ${GRID_N}×${GRID_N} grid · ${scale.lens}`, "head");
+    log(`sampling Macrostrat host geology across ${GRID_N * GRID_N} cells…`, "dim");
+
+    const cells = await buildGrid(bbox, mineral, bias);
     renderGrid(cells);
     renderTelemetry(cells, scale);
 
-    log(`${scale.key} · ${scale.km} · ${GRID_N}×${GRID_N} grid · ${scale.lens}`, "head");
-
-    // real host-rock evidence for this window (best-effort)
     const wlat = (bbox.s + bbox.n) / 2, wlng = (bbox.w + bbox.e) / 2;
-    const macro = await fetchMacrostrat(wlat, wlng);
-    if (macro.ok) log(`macrostrat host: ${[macro.name, macro.lith, macro.age && "(" + macro.age + ")"].filter(Boolean).join(" ")}`, "dim");
+    const macro = await fetchMacro(wlat, wlng);
+    const ms = macroSummary(macro);
+    if (ms) log(`regional host: ${ms}`, "dim");
     const nearby = nearestDeposits(wlat, wlng, mineral, 4);
 
     await scanReveal(cells);
@@ -440,7 +443,7 @@ async function run() {
     cells.forEach((c) => map.setFeatureState({ source: "grid", id: c.index }, { lit: c.index === decision.cell }));
     setData("winner", rectFeature(cells[decision.cell].bounds));
     markWinnerRow(decision.cell);
-    updateEvidence(cells[decision.cell], mineral, macro, decision);
+    updateEvidence(cells[decision.cell], mineral, decision);
     els.sbConf.textContent = `${decision.confidence}%`;
     els.sbTarget.textContent = `C${String(decision.cell).padStart(2, "0")} — ${decision.headline}`;
     const tag = decision.type === "known" ? "known-led" : "novel-led";
@@ -453,21 +456,20 @@ async function run() {
   await finalize(bbox, mineral, lastDecision);
   stopClock();
   running = false;
-  els.begin.disabled = els.reset.disabled = els.mineralSel.disabled = els.biasSel.disabled = false;
+  els.begin.disabled = els.mineralSel.disabled = els.biasSel.disabled = false;
 }
 
-/* ---- final site -------------------------------------------------------- */
+/* ---- final site (honest: real geology + analogue ranges, no fake assays) */
 async function finalize(b, mineral, decision) {
   await flyToBox(b, 2400);
   const lat = (b.s + b.n) / 2, lng = (b.w + b.e) / 2;
-  const peak = clamp01(signalField(lat, lng, mineral) / 1.8);
-  const grade = mineral.grade.lo + (mineral.grade.hi - mineral.grade.lo) * peak;
-  const tonnage = Math.round(mineral.tonnage.lo + (mineral.tonnage.hi - mineral.tonnage.lo) * peak);
+  const macro = await fetchMacro(lat, lng);
+  const fav = Math.round(lithFavorability(mineral.id, macro) * 100);
+  const host = macroSummary(macro) || "no geologic-map coverage";
   const near = nearestDeposits(lat, lng, mineral, 1)[0];
   const gap = near ? Math.round(near.distKm) : null;
-  const macro = await fetchMacrostrat(lat, lng);
-  const host = macro.ok ? [macro.lith, macro.age && "(" + macro.age + ")"].filter(Boolean).join(" ") : "—";
   const isNovel = decision.type === "novel";
+  const g = mineral.grade, t = mineral.tonnage;
 
   const el = document.createElement("div");
   el.className = "site-marker";
@@ -481,12 +483,14 @@ async function finalize(b, mineral, decision) {
   els.result.querySelector(".r-title").textContent = `${mineral.name} target · ${decision.headline}`;
   els.result.querySelector(".r-grid").innerHTML = `
     <div><label>Coordinates</label><b>${fmtLL(lat, lng)}</b></div>
-    <div class="accent"><label>Est. grade</label><b>${grade.toFixed(2)} ${mineral.grade.unit}</b></div>
-    <div class="accent"><label>Inferred tonnage</label><b>${tonnage.toLocaleString()} ${mineral.tonnage.unit}</b></div>
     <div><label>Confidence</label><b>${decision.confidence}%</b></div>
+    <div class="accent"><label>Host favourability</label><b>${fav}%</b></div>
     <div><label>Classification</label><b>${isNovel ? "Novel signal" : "Known / brownfield"}</b></div>
-    <div><label>Nearest known</label><b>${near ? `${near.n} · ${gap} km` : "none"}</b></div>
-    <div class="r-wide"><label>Host (Macrostrat)</label><b>${host}</b></div>`;
+    <div class="r-wide"><label>Host geology · Macrostrat</label><b>${host}</b></div>
+    <div class="r-wide"><label>Nearest catalogued deposit</label><b>${near ? `${near.n} · ${near.status} · ${near.src} · ${gap} km` : "none in range"}</b></div>
+    <div><label>Analogue grade · ${mineral.symbol} model</label><b>${g.lo}–${g.hi} ${g.unit}</b></div>
+    <div><label>Analogue tonnage · model</label><b>${t.lo.toLocaleString()}–${t.hi.toLocaleString()} ${t.unit}</b></div>
+    <div class="r-note r-wide">Grade/tonnage are typical ranges for this deposit type (analogy only) — not measured at this location.</div>`;
   els.result.classList.add("show");
 }
 
@@ -505,7 +509,7 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 window.addEventListener("DOMContentLoaded", () => {
   Object.assign(els, {
     mineralSel: $("mineral"), biasSel: $("bias"), modelSel: $("model"), backendNote: $("backend-note"),
-    reset: $("reset"), begin: $("begin"), log: $("log"),
+    begin: $("begin"), log: $("log"),
     datasetsBtn: $("datasets-btn"), datasets: $("datasets"),
     reticle: $("reticle"), hint: $("hint"),
     sbBias: $("sb-bias"), sbCommodity: $("sb-commodity"), sbScale: $("sb-scale"), sbWindow: $("sb-window"),
@@ -549,11 +553,6 @@ window.addEventListener("DOMContentLoaded", () => {
   document.documentElement.style.setProperty("--commodity", m0.color);
   els.sbCommodity.textContent = `${m0.name} — ${m0.symbol}`;
 
-  els.reset.addEventListener("click", () => {
-    if (running) return;
-    map.flyTo({ center: WORLD.center, zoom: WORLD.zoom, duration: 900, essential: true });
-    els.hint.classList.add("show");
-  });
   els.begin.addEventListener("click", run);
   $("resultClose").addEventListener("click", () => els.result.classList.remove("show"));
 

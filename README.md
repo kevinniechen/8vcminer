@@ -1,4 +1,4 @@
-# GAIA-1 · Autonomous Mineral Exploration Demo
+# 8vcminer · Autonomous Mineral Exploration Demo
 
 An interactive AI demo: pick a commodity, draw a bounding box on a world map, and
 an LLM agent progressively analyzes geoscience data, zooming from continental
@@ -21,35 +21,36 @@ flags a potential new mining site.
 
 ## The AI
 
-- **With an Anthropic API key**, the agent really calls the Claude Messages API
-  **directly from your browser** (streaming, via the
-  `anthropic-dangerous-direct-browser-access` header) to plan each zoom. Model is
-  selectable in the sidebar → *Inference backend* — Haiku 4.5 (fast, default),
-  Sonnet 4.6, or Opus 4.8.
-- A key is pre-seeded from `js/config.local.js` (see below). You can also paste
-  one into the sidebar, which persists in `localStorage`.
+- **With an Anthropic API key on the server**, the agent calls the Claude
+  Messages API through a **same-origin proxy** (`/api/messages`) — the key stays
+  server-side and never reaches the browser. Streaming SSE is passed through.
+  Model is selectable in the sidebar → *Inference backend* — Haiku 4.5 (fast,
+  default), Sonnet 4.6, or Opus 4.8.
 - **Without a key**, a built-in deterministic agent runs the same loop so the
   system still operates. The real path also falls back to it on any API error.
+- The key is set as the `ANTHROPIC_API_KEY` env var (Railway service variable in
+  prod, `.env` locally). If it ever leaks, rotate it at console.anthropic.com.
 
-### `js/config.local.js` — holds the API key ⚠️
+## The data model (no synthetic field)
 
-This file seeds your Anthropic key into the browser on load so the agent does
-real analysis. **It contains a secret** — don't commit it, share it, or deploy
-it to a public host (anyone who can open the page can use the key). Rotate the
-key at console.anthropic.com if it leaks. For anything public, drop the
-direct-browser-access approach and proxy calls through a small backend instead.
+Scoring is driven by **two real, separate channels**, combined by the selected
+**discovery bias** (Conservative / Balanced / Frontier):
 
-> ⚠️ Putting an API key in a browser exposes it to that page. This is fine for a
-> local personal demo; for anything public, proxy the calls through a small
-> backend instead of using the direct-browser-access header.
+- **Known evidence** — proximity to catalogued deposits. ~70 real named
+  deposits/districts ship in `js/deposits.js`: US entries tagged **USGS USMIN**
+  (Bingham Canyon, Goldstrike, Mountain Pass, Thacker Pass…) and major **global
+  districts** (Escondida, Grasberg, Bayan Obo, Norilsk, Olympic Dam…).
+- **Geological signal** — host-rock favourability from **live Macrostrat
+  geology**. Each grid cell's surface lithology/age is fetched from the
+  Macrostrat API (server-proxied at `/api/macrostrat`) and matched to the
+  commodity's favoured host rocks (e.g. intermediate intrusives for porphyry Cu,
+  ultramafics for magmatic Ni). High signal where the host geology is right but
+  no deposit is catalogued = a genuine greenfield look-alike.
 
-## The geology model
-
-There is no real exploration dataset here. A deterministic *prospectivity field*
-is generated from Gaussian "hotspots" placed at **real mineral provinces** for
-each commodity (e.g. the Chilean Andes for copper, the Lithium Triangle for Li)
-plus fractal noise for texture — so the zoom-in converges on a believable target
-and selecting the right continent lands you in the right belt.
+There is **no synthetic/fabricated prospectivity field**. The grade/tonnage on
+the final card are *typical analogue ranges* for the deposit type (by analogy),
+explicitly not measured assays. See the in-app **Data sources & roadmap** panel
+for the full list of active datasets and what's planned next.
 
 ## Live
 
@@ -93,7 +94,8 @@ railway variable list     # service variables
 
 - `index.html` — layout, status strip, telemetry panel
 - `css/styles.css` — dense operations-platform theme (Palantir/Anduril register)
-- `js/data.js` — minerals, real provinces, synthetic prospectivity field
+- `js/data.js` — mineral metadata (deposit model, analogue grade/tonnage ranges)
+- `js/deposits.js` — real deposits (USMIN + global) + host-rock favourability scorer
 - `js/agent.js` — Claude API agent (streaming) + deterministic fallback
-- `js/app.js` — MapLibre map, window drawing, scan, telemetry table, zoom loop
-- `js/config.local.js` — local API-key seed (sensitive; do not share)
+- `js/app.js` — MapLibre map, window drawing, scan, telemetry, evidence, zoom loop
+- `server.js` — static server + Claude proxy (`/api/messages`) + Macrostrat proxy

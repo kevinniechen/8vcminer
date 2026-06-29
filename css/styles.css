@@ -263,6 +263,7 @@ select:focus, input:focus { border-color: var(--accent); }
 .r-grid div.accent b { color: var(--commodity); }
 .r-grid div.r-wide { grid-column: 1 / -1; }
 .r-grid div.r-wide b { font-size: 11px; line-height: 1.4; }
+.r-grid div.r-note { font-size: 9.5px; color: var(--muted); line-height: 1.45; font-style: italic; margin-top: 2px; }
 
 /* ---------------- evidence panel (Known vs Novel) ---------------- */
 .epanel {
