@@ -36,6 +36,14 @@
             <option value="uranium">Uranium — U</option>
           </select>
         </label>
+        <label class="field">
+          <span>Discovery bias</span>
+          <select id="bias">
+            <option value="conservative">Conservative — rank known / brownfield</option>
+            <option value="balanced" selected>Balanced — permissive ground near known</option>
+            <option value="frontier">Frontier — look-alike geology, away from known</option>
+          </select>
+        </label>
         <div class="btn-row">
           <button id="draw" class="btn">Define window</button>
           <button id="begin" class="btn primary" disabled>Run analysis</button>
@@ -69,7 +77,7 @@
 
       <!-- top telemetry strip -->
       <div id="statusbar">
-        <div class="seg"><label>System</label><b id="sb-system">8VCMINER</b></div>
+        <div class="seg"><label>Bias</label><b id="sb-bias">Balanced</b></div>
         <div class="seg"><label>Commodity</label><b id="sb-commodity">Copper — Cu</b></div>
         <div class="seg"><label>Scale</label><b id="sb-scale">STANDBY</b></div>
         <div class="seg"><label>Window</label><b id="sb-window">—</b></div>
@@ -100,7 +108,16 @@
             <tbody id="tp-tbody"></tbody>
           </table>
         </div>
-        <div class="tp-foot"><span>ranked by composite prospectivity</span><span id="tp-count" class="mono"></span></div>
+        <div class="tp-foot"><span>ranked by bias-weighted composite</span><span id="tp-count" class="mono"></span></div>
+      </div>
+
+      <!-- evidence panel: Known evidence vs Novel signal -->
+      <div id="evidence" class="epanel"></div>
+
+      <!-- known-deposit legend -->
+      <div id="legend" class="legend">
+        <span class="lg-dot"></span>
+        <span>Known deposit · USMIN + global districts</span>
       </div>
 
       <!-- final result -->
@@ -115,6 +132,7 @@
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/deposits.js"></script>
   <script src="js/agent.js"></script>
   <script src="js/app.js"></script>
 </body>

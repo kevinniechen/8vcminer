@@ -1,18 +1,20 @@
 /* =============================================================================
-   app.js — map, window selection, scan, telemetry table, and the zoom loop
+   app.js — map, window selection, scan, telemetry, evidence panel, zoom loop
+   -----------------------------------------------------------------------------
+   Scoring is split into two channels that are kept visible throughout:
+     • KNOWN  — proximity to catalogued deposits (USMIN + global districts)
+     • SIGNAL — permissive / look-alike geology (the synthetic prospectivity field)
+   The DISCOVERY BIAS (conservative / balanced / frontier) decides how they're
+   combined into the ranked COMPOSITE. Macrostrat supplies real host-rock
+   evidence for each window.
    ============================================================================= */
 
 const SCALES = [
-  { key: "CONTINENTAL", km: "~3,000 km", sub: "metallogenic province",
-    layers: ["Tectonic Setting", "Crustal Architecture", "Regional Geophysics", "Known Occurrences"] },
-  { key: "REGIONAL", km: "~700 km", sub: "mineral belt",
-    layers: ["Host Lithology", "Structural Corridors", "Regional Geochem", "Gravity/Magnetics"] },
-  { key: "DISTRICT", km: "~150 km", sub: "prospect cluster",
-    layers: ["Alteration (ASTER)", "Fault Intersections", "Soil Geochem", "IP Chargeability"] },
-  { key: "PROSPECT", km: "~30 km", sub: "drill target",
-    layers: ["Rock-chip Assays", "Detailed Magnetics", "Vein Density", "Gossan / Outcrop"] },
-  { key: "DEPOSIT", km: "~6 km", sub: "resource delineation",
-    layers: ["Drill Intercepts", "Grade Continuity", "Ore Geometry", "Metallurgy"] },
+  { key: "CONTINENTAL", km: "~3,000 km", sub: "metallogenic province", lens: "craton / orogen setting + province endowment" },
+  { key: "REGIONAL", km: "~700 km", sub: "mineral belt", lens: "host terrane + deposit clustering" },
+  { key: "DISTRICT", km: "~150 km", sub: "prospect cluster", lens: "district structures + alteration footprint" },
+  { key: "PROSPECT", km: "~30 km", sub: "drill target", lens: "target geometry + permissive host" },
+  { key: "DEPOSIT", km: "~6 km", sub: "resource delineation", lens: "deposit footprint + grade continuity" },
 ];
 const GRID_N = 4;
 
@@ -32,6 +34,8 @@ let map;
 let currentBBox = null;
 let drawMode = false, drawing = false, drawStart = null, running = false;
 let runStart = 0, clockTimer = null;
+
+function getBias() { return localStorage.getItem("discovery_bias") || "balanced"; }
 
 /* ---- mission clock ----------------------------------------------------- */
 function fmtClock() {
@@ -63,6 +67,28 @@ function setHeatRamp(color) {
   ]);
 }
 
+/* ---- known-deposit markers --------------------------------------------- */
+function depFeatures(mineral) {
+  return {
+    type: "FeatureCollection",
+    features: (KNOWN_DEPOSITS[mineral.id] || []).map((d) => ({
+      type: "Feature",
+      properties: { name: d.n, src: d.src, status: d.status, w: _depW(d) },
+      geometry: { type: "Point", coordinates: [d.lng, d.lat] },
+    })),
+  };
+}
+function refreshDeposits(mineral, bias) {
+  if (!map || !map.getSource("deposits")) return;
+  map.getSource("deposits").setData(depFeatures(mineral));
+  map.setPaintProperty("dep-dot", "circle-color", mineral.color);
+  // Frontier downweights known evidence → dim the catalogued deposits.
+  const dim = bias === "frontier";
+  map.setPaintProperty("dep-dot", "circle-opacity", dim ? 0.28 : 0.85);
+  map.setPaintProperty("dep-dot", "circle-stroke-opacity", dim ? 0.3 : 0.85);
+  if (map.getLayer("dep-label")) map.setPaintProperty("dep-label", "text-opacity", dim ? 0.25 : 0.8);
+}
+
 /* ---- map setup --------------------------------------------------------- */
 function initMap() {
   map = new maplibregl.Map({
@@ -70,11 +96,12 @@ function initMap() {
     attributionControl: { compact: true },
     style: {
       version: 8,
+      glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
       sources: {
         sat: {
           type: "raster",
           tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-          tileSize: 256, attribution: "Imagery © Esri",
+          tileSize: 256, attribution: "Imagery © Esri · Geology © Macrostrat · Deposits: USGS USMIN + public sources",
         },
       },
       layers: [{ id: "sat", type: "raster", source: "sat" }],
@@ -87,6 +114,7 @@ function initMap() {
     map.addSource("bbox", { type: "geojson", data: empty() });
     map.addSource("sel", { type: "geojson", data: empty() });
     map.addSource("winner", { type: "geojson", data: empty() });
+    map.addSource("deposits", { type: "geojson", data: empty() });
 
     map.addLayer({
       id: "grid-fill", type: "fill", source: "grid",
@@ -99,6 +127,33 @@ function initMap() {
       id: "grid-line", type: "line", source: "grid",
       paint: { "line-color": "rgba(190,202,214,0.9)", "line-opacity": 0.12, "line-width": 0.8 },
     });
+
+    // known deposits (the "Known evidence" layer)
+    map.addLayer({
+      id: "dep-dot", type: "circle", source: "deposits",
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, ["+", 2.5, ["*", 4, ["get", "w"]]], 8, ["+", 4, ["*", 8, ["get", "w"]]]],
+        "circle-color": "#d68a3a",
+        "circle-opacity": 0.85,
+        "circle-stroke-width": 1,
+        "circle-stroke-color": "#e7edf2",
+        "circle-stroke-opacity": 0.85,
+      },
+    });
+    map.addLayer({
+      id: "dep-label", type: "symbol", source: "deposits",
+      minzoom: 3.6,
+      layout: {
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 10, "text-offset": [0, 1.0], "text-anchor": "top",
+        "text-optional": true, "text-allow-overlap": false,
+      },
+      paint: {
+        "text-color": "#d7dee4", "text-halo-color": "#070809", "text-halo-width": 1.3, "text-opacity": 0.8,
+      },
+    });
+
     map.addLayer({
       id: "bbox-glow", type: "line", source: "bbox",
       paint: { "line-color": "#d68a3a", "line-opacity": 0.16, "line-width": 5, "line-blur": 3 },
@@ -124,7 +179,9 @@ function initMap() {
       paint: { "line-color": "#ffffff", "line-width": 1.75 },
     });
 
-    setHeatRamp(MINERALS[els.mineralSel.value].color);
+    const m = MINERALS[els.mineralSel.value];
+    setHeatRamp(m.color);
+    refreshDeposits(m, getBias());
     applyStartBox();
   });
 
@@ -165,24 +222,31 @@ function spanKm(b) {
 function fmtLL(lat, lng) {
   return `${Math.abs(lat).toFixed(3)}°${lat >= 0 ? "N" : "S"} ${Math.abs(lng).toFixed(3)}°${lng >= 0 ? "E" : "W"}`;
 }
+const cellCentroid = (c) => [(c.bounds.s + c.bounds.n) / 2, (c.bounds.w + c.bounds.e) / 2];
 
-/* ---- grid build + scoring --------------------------------------------- */
-function buildGrid(b, mineral) {
+/* ---- grid build + dual-channel scoring --------------------------------- */
+function buildGrid(b, mineral, bias) {
   const cw = (b.e - b.w) / GRID_N, ch = (b.n - b.s) / GRID_N;
-  const cells = []; let max = 1e-9;
+  const cells = []; let maxK = 1e-9, maxS = 1e-9;
   for (let r = 0; r < GRID_N; r++) {
     for (let c = 0; c < GRID_N; c++) {
       const cb = { w: b.w + c * cw, e: b.w + (c + 1) * cw, s: b.n - (r + 1) * ch, n: b.n - r * ch };
-      const { mean, peak } = sampleCell(cb, mineral);
-      cells.push({ index: r * GRID_N + c, bounds: cb, mean, peak });
-      if (mean > max) max = mean;
+      const f = sampleFields(cb, mineral);
+      cells.push({ index: r * GRID_N + c, bounds: cb, rawK: f.known, rawS: f.signal });
+      if (f.known > maxK) maxK = f.known;
+      if (f.signal > maxS) maxS = f.signal;
     }
   }
+  let maxC = 1e-9;
   for (const cell of cells) {
-    cell.score = clamp01(cell.mean / max);
-    const clat = (cell.bounds.s + cell.bounds.n) / 2, clng = (cell.bounds.w + cell.bounds.e) / 2;
-    cell.layers = [0, 1, 2, 3].map((i) =>
-      Math.round(clamp01(cell.score * (0.65 + 0.25 * i / 3) + 0.35 * layerNoise(clat, clng, i + 1)) * 100));
+    cell.known = clamp01(cell.rawK / maxK);
+    cell.signal = clamp01(cell.rawS / maxS);
+    cell.compRaw = composite(cell.known, cell.signal, bias);
+    if (cell.compRaw > maxC) maxC = cell.compRaw;
+  }
+  for (const cell of cells) {
+    cell.composite = clamp01(cell.compRaw / maxC);
+    cell.score = cell.composite; // drives heat ramp
   }
   return cells;
 }
@@ -206,27 +270,69 @@ async function scanReveal(cells) {
   showReticle(false);
 }
 
-/* ---- telemetry table --------------------------------------------------- */
-function abbr(name) {
-  return name.replace(/[^A-Za-z ]/g, "").trim().split(/\s+/)[0].slice(0, 3).toUpperCase();
-}
+/* ---- telemetry table (Known vs Novel split) ---------------------------- */
+function bar(pct, cls) { return `<span class="mini ${cls}"><i style="width:${Math.round(pct)}%"></i></span>`; }
 function renderTelemetry(cells, scale) {
   els.telemetry.classList.add("show");
   els.tpSub.textContent = scale.key;
   els.tpCount.textContent = `${cells.length} cells`;
   els.tpThead.innerHTML =
-    "<tr><th>cell</th><th>score</th>" + scale.layers.map((l) => `<th title="${l}">${abbr(l)}</th>`).join("") + "</tr>";
-  const ranked = [...cells].sort((a, b) => b.score - a.score);
+    `<tr><th>cell</th><th>comp</th><th title="Known evidence — proximity to catalogued deposits">known</th>` +
+    `<th title="Novel signal — permissive / look-alike geology">signal</th></tr>`;
+  const ranked = [...cells].sort((a, b) => b.composite - a.composite);
   els.tpTbody.innerHTML = ranked.map((c) => {
-    const pct = Math.round(c.score * 100);
+    const cp = Math.round(c.composite * 100), k = Math.round(c.known * 100), s = Math.round(c.signal * 100);
     return `<tr data-cell="${c.index}"><td class="tp-cell">C${String(c.index).padStart(2, "0")}</td>` +
-      `<td><span class="mini"><i style="width:${pct}%"></i></span>${pct}</td>` +
-      c.layers.map((v) => `<td>${v}</td>`).join("") + "</tr>";
+      `<td>${cp}</td>` +
+      `<td>${bar(k, "k")}${k}</td>` +
+      `<td>${bar(s, "s")}${s}</td></tr>`;
   }).join("");
 }
 function markWinnerRow(idx) {
   els.tpTbody.querySelectorAll("tr").forEach((tr) =>
     tr.classList.toggle("win", +tr.dataset.cell === idx));
+}
+
+/* ---- evidence panel: Known evidence vs Novel signal -------------------- */
+function updateEvidence(cell, mineral, macro, decision) {
+  const [lat, lng] = cellCentroid(cell);
+  const near = nearestDeposits(lat, lng, mineral, 2);
+  const gap = near[0] ? Math.round(near[0].distKm) : null;
+  const host = macro && macro.ok
+    ? [macro.name, macro.lith, macro.age && "(" + macro.age + ")"].filter(Boolean).join(" ")
+    : "no Macrostrat unit returned";
+  const nearHtml = near.length
+    ? near.map((d) => `<li><b>${d.n}</b> · ${d.status} · <span class="src">${d.src}</span> · ${Math.round(d.distKm)} km</li>`).join("")
+    : `<li class="none">none catalogued in range</li>`;
+  const typeTag = decision
+    ? `<span class="etype ${decision.type}">${decision.type === "known" ? "KNOWN-LED" : "NOVEL-LED"}</span>`
+    : "";
+
+  els.evidence.classList.add("show");
+  els.evidence.innerHTML =
+    `<div class="ev-head"><span>Evidence · C${String(cell.index).padStart(2, "0")}</span>${typeTag}</div>` +
+    `<div class="ev-sec known">` +
+      `<div class="ev-t"><i class="dot k"></i>Known evidence <em>${Math.round(cell.known * 100)}</em></div>` +
+      `<ul class="ev-list">${nearHtml}</ul>` +
+      `<div class="ev-kv"><label>Host (Macrostrat)</label><b>${host}</b></div>` +
+    `</div>` +
+    `<div class="ev-sec novel">` +
+      `<div class="ev-t"><i class="dot s"></i>Novel signal <em>${Math.round(cell.signal * 100)}</em></div>` +
+      `<div class="ev-kv"><label>Greenfield gap</label><b>${gap == null ? "—" : gap + " km to nearest known"}</b></div>` +
+      `<div class="ev-kv"><label>Permissive terrain</label><b>${cell.signal > 0.55 ? "yes — look-alike host" : "moderate"}</b></div>` +
+    `</div>`;
+}
+
+/* ---- Macrostrat fetch -------------------------------------------------- */
+async function fetchMacrostrat(lat, lng) {
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 7000);
+    const r = await fetch(`/api/macrostrat?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}`, { signal: ctrl.signal });
+    clearTimeout(to);
+    if (!r.ok) return { ok: false };
+    return await r.json();
+  } catch { return { ok: false }; }
 }
 
 /* ---- camera ------------------------------------------------------------ */
@@ -255,24 +361,30 @@ function setStatus(scale, level, bbox) {
   els.sbWindow.textContent = `${spanKm(bbox)} km`;
   els.sbLevel.textContent = `${level + 1} / ${SCALES.length}`;
 }
+function setBiasStatus(bias) { els.sbBias.textContent = (BIAS[bias] || BIAS.balanced).label; }
 function showReticle(on) { els.reticle.classList.toggle("show", on); }
 
 /* ---- main loop --------------------------------------------------------- */
 async function run() {
   if (!currentBBox || running) return;
   running = true;
-  els.begin.disabled = els.draw.disabled = els.mineralSel.disabled = true;
+  els.begin.disabled = els.draw.disabled = els.mineralSel.disabled = els.biasSel.disabled = true;
   els.result.classList.remove("show");
+  els.evidence.classList.remove("show");
   els.log.innerHTML = "";
   startClock();
 
   const mineral = MINERALS[els.mineralSel.value];
+  const bias = getBias();
   document.documentElement.style.setProperty("--commodity", mineral.color);
   setHeatRamp(mineral.color);
+  refreshDeposits(mineral, bias);
+  setBiasStatus(bias);
   els.sbCommodity.textContent = `${mineral.name} — ${mineral.symbol}`;
 
   log(`agent initialized · target ${mineral.name} (${mineral.symbol})`, "head");
   log(`backend ${await Agent.backend()}`, "dim");
+  log(`discovery bias: ${BIAS[bias].label} — ${BIAS[bias].blurb}`, "dim");
 
   let bbox = currentBBox, lastDecision = null;
 
@@ -281,23 +393,32 @@ async function run() {
     setStatus(scale, level, bbox);
     await flyToBox(bbox, level === 0 ? 1600 : 2200);
 
-    const cells = buildGrid(bbox, mineral);
+    const cells = buildGrid(bbox, mineral, bias);
     renderGrid(cells);
     renderTelemetry(cells, scale);
 
-    log(`${scale.key} · ${scale.km} · ${GRID_N}×${GRID_N} grid · layers: ${scale.layers.join(", ")}`, "head");
+    log(`${scale.key} · ${scale.km} · ${GRID_N}×${GRID_N} grid · ${scale.lens}`, "head");
+
+    // real host-rock evidence for this window (best-effort)
+    const wlat = (bbox.s + bbox.n) / 2, wlng = (bbox.w + bbox.e) / 2;
+    const macro = await fetchMacrostrat(wlat, wlng);
+    if (macro.ok) log(`macrostrat host: ${[macro.name, macro.lith, macro.age && "(" + macro.age + ")"].filter(Boolean).join(" ")}`, "dim");
+    const nearby = nearestDeposits(wlat, wlng, mineral, 4);
+
     await scanReveal(cells);
 
     const body = log("", "agent");
-    const decision = await Agent.analyze({ mineral, scale, level, bbox, cells }, (c) => streamInto(body, c));
+    const decision = await Agent.analyze({ mineral, scale, level, bbox, cells, bias, macro, nearby }, (c) => streamInto(body, c));
     lastDecision = decision;
 
     cells.forEach((c) => map.setFeatureState({ source: "grid", id: c.index }, { lit: c.index === decision.cell }));
     setData("winner", rectFeature(cells[decision.cell].bounds));
     markWinnerRow(decision.cell);
+    updateEvidence(cells[decision.cell], mineral, macro, decision);
     els.sbConf.textContent = `${decision.confidence}%`;
     els.sbTarget.textContent = `C${String(decision.cell).padStart(2, "0")} — ${decision.headline}`;
-    log(`commit C${String(decision.cell).padStart(2, "0")} · "${decision.headline}" · conf ${decision.confidence}%`, "ok");
+    const tag = decision.type === "known" ? "known-led" : "novel-led";
+    log(`commit C${String(decision.cell).padStart(2, "0")} · ${tag} · "${decision.headline}" · conf ${decision.confidence}%`, "ok");
 
     bbox = cells[decision.cell].bounds;
     if (level < SCALES.length - 1) await sleep(500);
@@ -306,16 +427,21 @@ async function run() {
   await finalize(bbox, mineral, lastDecision);
   stopClock();
   running = false;
-  els.begin.disabled = els.draw.disabled = els.mineralSel.disabled = false;
+  els.begin.disabled = els.draw.disabled = els.mineralSel.disabled = els.biasSel.disabled = false;
 }
 
 /* ---- final site -------------------------------------------------------- */
 async function finalize(b, mineral, decision) {
   await flyToBox(b, 2400);
   const lat = (b.s + b.n) / 2, lng = (b.w + b.e) / 2;
-  const peak = clamp01(prospectivity(lat, lng, mineral) / 1.2);
+  const peak = clamp01(signalField(lat, lng, mineral) / 1.8);
   const grade = mineral.grade.lo + (mineral.grade.hi - mineral.grade.lo) * peak;
   const tonnage = Math.round(mineral.tonnage.lo + (mineral.tonnage.hi - mineral.tonnage.lo) * peak);
+  const near = nearestDeposits(lat, lng, mineral, 1)[0];
+  const gap = near ? Math.round(near.distKm) : null;
+  const macro = await fetchMacrostrat(lat, lng);
+  const host = macro.ok ? [macro.lith, macro.age && "(" + macro.age + ")"].filter(Boolean).join(" ") : "—";
+  const isNovel = decision.type === "novel";
 
   const el = document.createElement("div");
   el.className = "site-marker";
@@ -323,7 +449,8 @@ async function finalize(b, mineral, decision) {
   if (window._siteMarker) window._siteMarker.remove();
   window._siteMarker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
 
-  log(`potential ${mineral.name} target delineated — SITE-01`, "alert");
+  log(`potential ${mineral.name} target delineated — SITE-01 (${isNovel ? "novel signal" : "known-belt"})`, "alert");
+  els.evidence.classList.remove("show");
 
   els.result.querySelector(".r-title").textContent = `${mineral.name} target · ${decision.headline}`;
   els.result.querySelector(".r-grid").innerHTML = `
@@ -331,8 +458,9 @@ async function finalize(b, mineral, decision) {
     <div class="accent"><label>Est. grade</label><b>${grade.toFixed(2)} ${mineral.grade.unit}</b></div>
     <div class="accent"><label>Inferred tonnage</label><b>${tonnage.toLocaleString()} ${mineral.tonnage.unit}</b></div>
     <div><label>Confidence</label><b>${decision.confidence}%</b></div>
-    <div><label>Deposit model</label><b>${mineral.symbol} · ${SCALES[SCALES.length - 1].sub}</b></div>
-    <div><label>Levels run</label><b>${SCALES.length}</b></div>`;
+    <div><label>Classification</label><b>${isNovel ? "Novel signal" : "Known / brownfield"}</b></div>
+    <div><label>Nearest known</label><b>${near ? `${near.n} · ${gap} km` : "none"}</b></div>
+    <div class="r-wide"><label>Host (Macrostrat)</label><b>${host}</b></div>`;
   els.result.classList.add("show");
 }
 
@@ -352,19 +480,28 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 /* ---- boot -------------------------------------------------------------- */
 window.addEventListener("DOMContentLoaded", () => {
   Object.assign(els, {
-    mineralSel: $("mineral"), modelSel: $("model"), backendNote: $("backend-note"),
+    mineralSel: $("mineral"), biasSel: $("bias"), modelSel: $("model"), backendNote: $("backend-note"),
     draw: $("draw"), begin: $("begin"), log: $("log"),
     reticle: $("reticle"), hint: $("hint"),
-    sbCommodity: $("sb-commodity"), sbScale: $("sb-scale"), sbWindow: $("sb-window"),
+    sbBias: $("sb-bias"), sbCommodity: $("sb-commodity"), sbScale: $("sb-scale"), sbWindow: $("sb-window"),
     sbLevel: $("sb-level"), sbConf: $("sb-conf"), sbTarget: $("sb-target"),
     sbCoords: $("sb-coords"), sbClock: $("sb-clock"),
     telemetry: $("telemetry"), tpSub: $("tp-sub"), tpThead: $("tp-thead"),
     tpTbody: $("tp-tbody"), tpCount: $("tp-count"),
-    result: $("result"),
+    evidence: $("evidence"), result: $("result"),
   });
 
   els.modelSel.value = localStorage.getItem("anthropic_model") || "claude-haiku-4-5";
   els.modelSel.addEventListener("change", () => localStorage.setItem("anthropic_model", els.modelSel.value));
+
+  els.biasSel.value = getBias();
+  setBiasStatus(getBias());
+  els.biasSel.addEventListener("change", () => {
+    if (running) return;
+    localStorage.setItem("discovery_bias", els.biasSel.value);
+    setBiasStatus(els.biasSel.value);
+    refreshDeposits(MINERALS[els.mineralSel.value], els.biasSel.value);
+  });
 
   // report whether the server has a key (real Claude) or we're in local sim
   Agent.configured().then((ok) => {
@@ -379,6 +516,7 @@ window.addEventListener("DOMContentLoaded", () => {
     document.documentElement.style.setProperty("--commodity", m.color);
     els.sbCommodity.textContent = `${m.name} — ${m.symbol}`;
     setHeatRamp(m.color);
+    refreshDeposits(m, getBias());
     applyStartBox();
   });
 

@@ -36,6 +36,7 @@ function json(res, code, obj) {
 // sliding 60s window; default 40 req/min/IP (~8 full 5-call runs).
 const RATE_MAX = +process.env.RATE_LIMIT_PER_MIN || 40;
 const hits = new Map();
+const macroCache = new Map(); // Macrostrat point results, keyed by rounded lat,lng
 function rateLimited(ip) {
   const now = Date.now();
   const arr = (hits.get(ip) || []).filter((t) => now - t < 60000);
@@ -51,6 +52,43 @@ const server = http.createServer(async (req, res) => {
 
   // ---- health: tells the frontend whether real Claude is available ----
   if (p === "/api/health") return json(res, 200, { configured: !!KEY });
+
+  // ---- Macrostrat geology proxy: real host-rock evidence for a point ----
+  // Returns a compact lithology/age summary from the Macrostrat map API.
+  // Server-side to dodge CORS and to add a tiny cache. Best-effort: any
+  // failure returns {ok:false} so the frontend degrades gracefully.
+  if (p === "/api/macrostrat" && req.method === "GET") {
+    const lat = +url.searchParams.get("lat");
+    const lng = +url.searchParams.get("lng");
+    if (!isFinite(lat) || !isFinite(lng)) return json(res, 400, { error: "bad coords" });
+    const ck = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+    const cached = macroCache.get(ck);
+    if (cached && Date.now() - cached.t < 6 * 3600e3) return json(res, 200, cached.v);
+    try {
+      const u = `https://macrostrat.org/api/v2/geologic_units/map?lat=${lat}&lng=${lng}&format=json`;
+      const ac = AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
+      const r = await fetch(u, { headers: { accept: "application/json" }, signal: ac });
+      if (!r.ok) return json(res, 200, { ok: false });
+      const d = await r.json();
+      const arr = (d && d.success && d.success.data) || [];
+      const u0 = arr[0];
+      if (!u0) { const v = { ok: false }; macroCache.set(ck, { t: Date.now(), v }); return json(res, 200, v); }
+      const ageName = u0.b_int_name && u0.t_int_name
+        ? (u0.b_int_name === u0.t_int_name ? u0.b_int_name : `${u0.t_int_name}–${u0.b_int_name}`)
+        : (u0.age || null);
+      const v = {
+        ok: true,
+        name: u0.name || u0.strat_name || null,
+        lith: u0.lith || null,
+        age: ageName,
+        b_age: u0.b_age, t_age: u0.t_age,
+        units: arr.length,
+      };
+      macroCache.set(ck, { t: Date.now(), v });
+      if (macroCache.size > 2000) macroCache.clear();
+      return json(res, 200, v);
+    } catch (_) { return json(res, 200, { ok: false }); }
+  }
 
   // ---- proxy: forward one Messages request to Anthropic, stream it back ----
   if (p === "/api/messages" && req.method === "POST") {
