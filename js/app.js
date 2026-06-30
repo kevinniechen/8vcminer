@@ -54,12 +54,13 @@ const DATASETS = {
     { name: "USGS MRDS", tag: "149k occ.", desc: "Mineral Resources Data System — 149,000+ real mineral occurrences (commodity, development status, deposit type, host rock). Drives the KNOWN-endowment channel: occurrence density + nearest deposit per cell." },
     { name: "Subduction zones — Bird PB2002", tag: "tectonic", desc: "Global plate-boundary model with classified subduction arcs. Distance-to-arc grid drives convergent-margin prospectivity (porphyry Cu, epithermal Au)." },
     { name: "GEM Global Active Faults", tag: "13.7k", desc: "13,696 active fault traces. Distance-to-fault grid drives structural control (orogenic Au, fault-hosted systems)." },
+    { name: "Sandwell free-air gravity", tag: "geophysics", desc: "Global 1-min free-air gravity. Horizontal-gradient grid (“gravity worms”) maps crustal-architecture edges that localise ore systems; gravity highs flag dense mafic-ultramafic crust (Ni)." },
     { name: "Macrostrat bedrock geology", tag: "live api", desc: "Surface lithology + age sampled per cell live. Host-rock favourability matched to each commodity's mineral-systems model." },
     { name: "Mineral-systems weighting", tag: "model", desc: "Per-commodity, per-scale weighting of the real layers (coarse → tectonic setting + endowment; fine → host lithology + structure)." },
     { name: "Esri World Imagery", tag: "basemap", desc: "Global satellite basemap, desaturated to a dark operational basemap." },
   ],
   soon: [
-    { name: "Gravity & magnetics", desc: "EMAG2 magnetic + WGM2012 gravity grids → crustal architecture, intrusive & density targeting." },
+    { name: "Magnetic anomalies (EMAG2)", desc: "Global magnetic anomaly grid → magnetite-bearing intrusions, IOCG, BIF & buried/blind targets." },
     { name: "ASTER / Sentinel-2 alteration", desc: "Multispectral mapping — clay, iron-oxide & silica alteration footprints at district scale." },
     { name: "USGS SGMC + global lithology", desc: "Higher-resolution bedrock lithology & structure polygons beyond Macrostrat coverage." },
     { name: "Craton & basement age", desc: "Archean/Proterozoic basement outlines for greenstone-Au and magmatic-Ni controls." },
@@ -490,6 +491,7 @@ function updateEvidence(cell, mineral, decision) {
       `<div class="ev-t"><i class="dot s"></i>Mineral-systems signal <em>${Math.round(cell.signal * 100)}</em></div>` +
       `<div class="ev-kv"><label>Subduction arc</label><b>${km(f.dSub)}</b></div>` +
       `<div class="ev-kv"><label>Nearest fault</label><b>${km(f.dFault)}</b></div>` +
+      `<div class="ev-kv"><label>Gravity edge</label><b>${f.gravGrad == null ? "—" : Math.round(f.gravGrad) + " mGal/°"}</b></div>` +
       `<div class="ev-kv"><label>Host (Macrostrat)</label><b>${host}</b></div>` +
       `<div class="ev-kv"><label>Greenfield gap</label><b>${gap == null ? "—" : gap + " km to nearest occ."}</b></div>` +
     `</div>`;
@@ -569,6 +571,7 @@ async function run() {
   log(`▦ live data stack`, "data");
   log(`  · USGS MRDS — 149k mineral occurrences`, "data");
   log(`  · Bird PB2002 subduction arcs · GEM active faults`, "data");
+  log(`  · Sandwell gravity (crustal architecture)`, "data");
   log(`  · Macrostrat bedrock geology (live)`, "data");
   log(`  · mineral-systems weighting per commodity & scale`, "data");
 
@@ -593,7 +596,7 @@ async function run() {
     const top = cells.reduce((a, c) => (c.composite > a.composite ? c : a), cells[0]);
     log(`▦ USGS MRDS · ${occTot} ${mineral.name} occurrence${occTot === 1 ? "" : "s"} in view`, "data");
     if (top.f.dSub != null)
-      log(`▦ tectonics (best cell) · subduction ${Math.round(top.f.dSub)} km · fault ${Math.round(top.f.dFault)} km`, "data");
+      log(`▦ geophysics (best cell) · subduction ${Math.round(top.f.dSub)} km · fault ${Math.round(top.f.dFault)} km · gravity-edge ${Math.round(top.f.gravGrad || 0)} mGal/°`, "data");
     const ms = macroSummary(top.macro);
     if (ms) log(`▦ Macrostrat host (best cell) · ${ms}`, "data");
 

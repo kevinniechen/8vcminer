@@ -40,7 +40,7 @@ function loadOcc(c) {
 
 function init() {
   try {
-    for (const n of ["dist_subduction", "dist_plate", "dist_fault"]) grids[n] = loadGrid(n);
+    for (const n of ["dist_subduction", "dist_plate", "dist_fault", "gravity", "grav_grad"]) grids[n] = loadGrid(n);
     const counts = {};
     for (const c of COMMODITIES) {
       occ[c] = loadOcc(c);
@@ -54,11 +54,12 @@ function init() {
         occurrences: { name: "USGS MRDS", note: "Mineral Resources Data System — real occurrences", counts },
         subduction: { name: "Bird (2003) PB2002 plate boundaries", note: "convergent-margin arcs" },
         faults: { name: "GEM Global Active Faults", note: "crustal structure proximity" },
+        gravity: { name: "Sandwell & Smith free-air gravity", note: "crustal architecture + gradient edges" },
         geology: { name: "Macrostrat", note: "live bedrock lithology + age (per query)" },
       },
       totalOccurrences: Object.values(counts).reduce((a, b) => a + b.occurrences, 0),
     };
-    console.log(`geodata: ${META.totalOccurrences} MRDS occurrences + 3 tectonic grids loaded`);
+    console.log(`geodata: ${META.totalOccurrences} MRDS occurrences + ${Object.keys(grids).length} feature grids loaded`);
   } catch (e) {
     META = { ok: false, error: String(e) };
     console.log("geodata: layers unavailable —", String(e));
@@ -127,6 +128,8 @@ function features(c, lat, lng, radiusKm) {
     dSub: sampleGrid(grids.dist_subduction, lat, lng),
     dPlate: sampleGrid(grids.dist_plate, lat, lng),
     dFault: sampleGrid(grids.dist_fault, lat, lng),
+    gravMgal: sampleGrid(grids.gravity, lat, lng),
+    gravGrad: sampleGrid(grids.grav_grad, lat, lng),
     occDensity: od.density,
     occCount: od.count,
     occNearestKm: od.nearestKm,

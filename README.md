@@ -31,26 +31,42 @@ flags a potential new mining site.
 - The key is set as the `ANTHROPIC_API_KEY` env var (Railway service variable in
   prod, `.env` locally). If it ever leaks, rotate it at console.anthropic.com.
 
-## The data model (no synthetic field)
+## The data model — real datasets, mineral-systems scoring
 
-Scoring is driven by **two real, separate channels**, combined by the selected
-**discovery bias** (Conservative / Balanced / Frontier):
+There is **no synthetic/fabricated field**. Every cell is scored from real
+geoscience layers, combined with commodity-specific, scale-aware
+**mineral-systems** weights and the selected **discovery bias**
+(Conservative / Balanced / Frontier).
 
-- **Known evidence** — proximity to catalogued deposits. ~70 real named
-  deposits/districts ship in `js/deposits.js`: US entries tagged **USGS USMIN**
-  (Bingham Canyon, Goldstrike, Mountain Pass, Thacker Pass…) and major **global
-  districts** (Escondida, Grasberg, Bayan Obo, Norilsk, Olympic Dam…).
-- **Geological signal** — host-rock favourability from **live Macrostrat
-  geology**. Each grid cell's surface lithology/age is fetched from the
-  Macrostrat API (server-proxied at `/api/macrostrat`) and matched to the
-  commodity's favoured host rocks (e.g. intermediate intrusives for porphyry Cu,
-  ultramafics for magmatic Ni). High signal where the host geology is right but
-  no deposit is catalogued = a genuine greenfield look-alike.
+**Real layers** (built by `scripts/`, raw sources in `data/raw/` kept local;
+compact indexed artifacts committed in `data/processed/`):
 
-There is **no synthetic/fabricated prospectivity field**. The grade/tonnage on
-the final card are *typical analogue ranges* for the deposit type (by analogy),
-explicitly not measured assays. See the in-app **Data sources & roadmap** panel
-for the full list of active datasets and what's planned next.
+- **USGS MRDS** — 149,436 real mineral occurrences (development status, deposit
+  type, host rock). Per-commodity occurrence-density field + nearest deposit.
+- **Bird (2003) PB2002** plate boundaries — classified **subduction arcs**.
+- **GEM Global Active Faults** — 13,696 fault traces.
+- **Sandwell & Smith free-air gravity** — crustal architecture; the
+  horizontal-gradient grid ("gravity worms") maps crustal edges that localise
+  ore systems.
+- **Macrostrat** — live bedrock lithology + age per cell.
+
+Precomputed 0.5° great-circle distance / gravity grids (scipy KDTree, gzipped)
+are loaded by `geodata.js`; the server answers a batch real-feature query at
+`POST /api/cells`.
+
+**Two channels, kept separate:**
+
+- **KNOWN** = MRDS occurrence endowment (real brownfield evidence).
+- **SIGNAL** = mineral-systems favourability from tectonics + structure +
+  gravity + host lithology, **scale-weighted** (coarse → tectonic setting &
+  province endowment; fine → host rock & structure). Copper keys on subduction
+  arcs, gold on faults + greenstone, nickel on dense mafic-ultramafic crust, etc.
+
+The **Frontier** bias ranks high-SIGNAL / low-KNOWN cells — favourable
+mineral-systems geology with no catalogued deposit = a genuine **greenfield**
+target. Grade/tonnage on the final card are *typical analogue ranges* for the
+deposit type (by analogy), not measured assays. See the in-app **Data sources &
+roadmap** panel (or `GET /api/meta`) for the live dataset manifest.
 
 ## Live
 

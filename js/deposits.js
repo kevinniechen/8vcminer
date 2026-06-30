@@ -70,22 +70,22 @@ function lithFavorability(mineralId, macro) {
    Notes are surfaced to the agent so it cites real exploration criteria. */
 const MS = {
   copper: { sub: 600, fault: 120, plate: 0,
-    w: { sub: 0.45, fault: 0.15, plate: 0, lith: 0.40 },
+    w: { sub: 0.42, fault: 0.13, plate: 0, grad: 0.10, lith: 0.35 },
     note: "porphyry/sediment-hosted Cu — convergent-margin magmatic arcs; intermediate intrusions; fault corridors" },
   gold: { sub: 900, fault: 60, plate: 0,
-    w: { sub: 0.15, fault: 0.45, plate: 0, lith: 0.40 },
+    w: { sub: 0.13, fault: 0.42, plate: 0, grad: 0.12, lith: 0.33 },
     note: "orogenic/epithermal Au — crustal-scale shear zones & greenstone belts; arc epithermal" },
   lithium: { sub: 0, fault: 200, plate: 0,
-    w: { sub: 0, fault: 0.15, plate: 0, lith: 0.85 },
+    w: { sub: 0, fault: 0.13, plate: 0, grad: 0.07, lith: 0.80 },
     note: "LCT pegmatite & brine/clay Li — fractionated granites, evaporitic basins, felsic volcanics" },
   rare_earth: { sub: 0, fault: 250, plate: 600,
-    w: { sub: 0, fault: 0.15, plate: 0.25, lith: 0.60 },
-    note: "carbonatite/alkaline REE — rift & craton-margin alkaline complexes" },
+    w: { sub: 0, fault: 0.13, plate: 0.22, grad: 0.12, lith: 0.53 },
+    note: "carbonatite/alkaline REE — rift & craton-margin alkaline complexes; gravity-edge intrusions" },
   nickel: { sub: 0, fault: 150, plate: 0,
-    w: { sub: 0, fault: 0.20, plate: 0, lith: 0.80 },
-    note: "magmatic Ni-sulphide/laterite — mafic-ultramafic intrusions, komatiites, ophiolite weathering" },
+    w: { sub: 0, fault: 0.18, plate: 0, grad: 0.18, lith: 0.64 },
+    note: "magmatic Ni-sulphide/laterite — dense mafic-ultramafic intrusions (gravity highs/edges), komatiites" },
   uranium: { sub: 0, fault: 150, plate: 0,
-    w: { sub: 0, fault: 0.25, plate: 0, lith: 0.75 },
+    w: { sub: 0, fault: 0.22, plate: 0, grad: 0.08, lith: 0.70 },
     note: "unconformity/sandstone U — Proterozoic basin margins, reactivated basement faults" },
 };
 
@@ -106,13 +106,15 @@ function msSignal(commodityId, f, level, nLevels) {
   const sSub = prox(f.dSub, ms.sub);
   const sFault = prox(f.dFault, ms.fault);
   const sPlate = prox(f.dPlate, ms.plate);
+  const sGrad = clamp01((f.gravGrad || 0) / 80);          // crustal-architecture edges (gravity worms)
   const sLith = lithFavorability(commodityId, f.macro);
   let wSub = (ms.w.sub || 0) * (1 - 0.7 * t);
   let wPlate = (ms.w.plate || 0) * (1 - 0.7 * t);
   let wFault = (ms.w.fault || 0) * (0.7 + 0.6 * t);
+  let wGrad = (ms.w.grad || 0) * (1.1 - 0.4 * t);         // gradients matter most regional→district
   let wLith = (ms.w.lith || 0) * (0.5 + 1.0 * t);
-  const sum = wSub + wPlate + wFault + wLith || 1;
-  return clamp01((wSub * sSub + wPlate * sPlate + wFault * sFault + wLith * sLith) / sum);
+  const sum = wSub + wPlate + wFault + wGrad + wLith || 1;
+  return clamp01((wSub * sSub + wPlate * sPlate + wFault * sFault + wGrad * sGrad + wLith * sLith) / sum);
 }
 
 /* discovery-bias ranking (known/signal normalized 0..1) */
