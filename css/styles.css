@@ -190,6 +190,38 @@ select:focus, input:focus { border-color: var(--accent); }
 }
 .hint.show { opacity: 1; }
 
+/* ---------------- live draw meter (size → starting level) ---------------- */
+.drawmeter {
+  position: absolute; z-index: 7; top: 54px; left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  width: min(440px, 92%);
+  background: rgba(9, 11, 14, 0.95); border: 1px solid var(--line-2); border-radius: 5px;
+  padding: 10px 12px; backdrop-filter: blur(4px);
+  opacity: 0; pointer-events: none; transition: opacity .14s, transform .14s;
+}
+.drawmeter.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.dm-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
+.dm-cap { font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
+.dm-km { font-size: 16px; color: var(--text-bright); font-weight: 500; }
+.dm-steps { display: flex; gap: 5px; }
+.dm-step {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  padding: 7px 8px; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--surface-2); transition: border-color .12s, background .12s, opacity .12s;
+}
+.dm-num {
+  width: 20px; height: 20px; display: grid; place-items: center; border-radius: 3px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  background: var(--surface-3); border: 1px solid var(--line-2);
+}
+.dm-lbl { font-size: 9px; letter-spacing: .5px; color: var(--muted); text-transform: uppercase; white-space: nowrap; }
+.dm-step.past { opacity: .45; }
+.dm-step.on { border-color: var(--commodity); background: var(--surface-3); }
+.dm-step.on .dm-num { background: var(--commodity); color: #0a0a0a; border-color: var(--commodity); }
+.dm-step.on .dm-lbl { color: var(--text-bright); }
+.dm-foot { margin-top: 9px; font-size: 10px; letter-spacing: .4px; color: var(--muted); }
+.dm-foot b { color: var(--commodity); font-family: var(--mono); font-weight: 500; }
+
 /* ---------------- grid telemetry panel ---------------- */
 .tpanel {
   position: absolute; z-index: 5; left: 14px; bottom: 14px; width: 318px;
@@ -363,10 +395,13 @@ select:focus, input:focus { border-color: var(--accent); }
 .ds-tag.soon { color: var(--muted); }
 .ds-item p { font-size: 10.5px; color: var(--text); line-height: 1.45; margin-top: 5px; }
 
-/* ---------------- responsive: tablet & stacked layout ---------------- */
+/* ---------------- responsive: tablet & stacked layout ----------------
+   Map on top, control rail below. The rail stays a flex column so the agent
+   log (.log-block, flex:1) keeps growing and scrolling — don't put overflow on
+   #sidebar itself or the log collapses. */
 @media (max-width: 820px) {
-  #app { grid-template-columns: 1fr; grid-template-rows: 1fr 44vh; }
-  #sidebar { order: 2; border-right: 0; border-top: 1px solid var(--line-2); overflow-y: auto; }
+  #app { grid-template-columns: 1fr; grid-template-rows: 1fr 46vh; }
+  #sidebar { order: 2; border-right: 0; border-top: 1px solid var(--line-2); }
   #statusbar { overflow-x: auto; }
   .tpanel { width: 280px; }
   .result-card { top: 52px; }
@@ -374,10 +409,18 @@ select:focus, input:focus { border-color: var(--accent); }
 
 /* ---------------- responsive: phone ---------------- */
 @media (max-width: 600px) {
-  #app { grid-template-rows: 47vh 53vh; }
-  .brand { padding: 11px 13px; }
+  /* give the control rail / agent log more room than the map */
+  #app { grid-template-rows: 44vh 56vh; }
+  .brand { padding: 10px 13px; }
   .brand h1 { font-size: 15px; }
   .brand p { font-size: 8.5px; }
+
+  /* compact controls so the agent log gets real estate */
+  .block { padding: 10px 14px; }
+  .field { margin-bottom: 8px; }
+  .btn-row { margin-top: 9px; }
+  .log-block .block-head { padding: 9px 14px 5px; }
+  #log { min-height: 90px; }            /* agent reasoning log always visible */
 
   /* compact status strip — keep only the live essentials, single row */
   #statusbar { height: 40px; overflow: hidden; }
@@ -395,6 +438,13 @@ select:focus, input:focus { border-color: var(--accent); }
   #mapctrl button { width: 30px; height: 30px; font-size: 15px; }
 
   .hint { font-size: 10px; padding: 5px 11px; max-width: 88%; text-align: center; top: 46px; }
+
+  /* draw meter: tighter so the 5 steps fit a phone */
+  .drawmeter { top: 46px; padding: 8px 9px; }
+  .dm-km { font-size: 14px; }
+  .dm-step { padding: 5px 4px; align-items: center; gap: 4px; }
+  .dm-num { width: 17px; height: 17px; font-size: 10px; }
+  .dm-lbl { font-size: 7.5px; letter-spacing: .2px; }
 
   /* result card: true full-width bottom sheet (fixed, escapes map clip) */
   .result-card { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 72vh; overflow-y: auto; }

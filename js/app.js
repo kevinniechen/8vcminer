@@ -17,6 +17,26 @@ const SCALES = [
 ];
 const GRID_N = 4;
 
+// short stepper labels per SCALES index (shown in the draw meter)
+const SCALE_TAG = ["Coarse", "Regional", "District", "Prospect", "Site"];
+
+// the size of the drawn window decides where analysis STARTS — a smaller box
+// skips the coarser levels. Thresholds are the longer box dimension in km.
+function boxSizeKm(b) {
+  const midlat = (b.s + b.n) / 2;
+  const wkm = Math.abs(b.e - b.w) * 111 * Math.cos((midlat * Math.PI) / 180);
+  const hkm = Math.abs(b.n - b.s) * 111;
+  return Math.max(wkm, hkm);
+}
+function levelForBox(b) {
+  const km = boxSizeKm(b);
+  if (km > 1500) return 0; // Coarse / Continental
+  if (km > 400) return 1;  // Regional
+  if (km > 80) return 2;   // District
+  if (km > 15) return 3;   // Prospect
+  return 4;                // Site / Deposit
+}
+
 const START_BOXES = {
   copper:     { w: -82, s: -40, e: -58, n: -8 },
   gold:       { w: 112, s: -36, e: 142, n: -14 },
@@ -206,20 +226,25 @@ function initMap() {
     applyStartBox(false); // set a default window but stay zoomed out on first load
     map.getCanvas().style.cursor = "crosshair";
     els.hint.classList.add("show");
+    setupTouchDraw();
   });
 
   // draw is always available — click-drag anywhere defines a window (no mode toggle)
   map.on("mousedown", (e) => {
     if (running) return;
     e.preventDefault(); drawing = true; drawStart = e.lngLat; map.dragPan.disable();
+    els.hint.classList.remove("show");
   });
   map.on("mousemove", (e) => {
-    if (drawing) setData("sel", rectFeature(boxFrom(drawStart, e.lngLat)));
-    if (!drawing) els.sbCoords.textContent = fmtLL(e.lngLat.lat, e.lngLat.lng);
+    if (drawing) {
+      const b = boxFrom(drawStart, e.lngLat);
+      setData("sel", rectFeature(b));
+      updateDrawMeter(b);
+    } else els.sbCoords.textContent = fmtLL(e.lngLat.lat, e.lngLat.lng);
   });
   map.on("mouseup", (e) => {
     if (!drawing) return;
-    drawing = false; map.dragPan.enable(); setData("sel", empty());
+    drawing = false; map.dragPan.enable(); setData("sel", empty()); showDrawMeter(false);
     const b = boxFrom(drawStart, e.lngLat);
     if (Math.abs(b.e - b.w) > 0.05 && Math.abs(b.n - b.s) > 0.05) {
       currentBBox = b;
@@ -229,6 +254,79 @@ function initMap() {
       els.sbWindow.textContent = `${spanKm(b)} km`;
     }
   });
+}
+
+/* ---- live draw meter: window size → starting analysis level ------------ */
+function buildDrawSteps() {
+  els.dmSteps.innerHTML = SCALES.map((s, i) =>
+    `<div class="dm-step" data-i="${i}"><span class="dm-num">${i + 1}</span><span class="dm-lbl">${SCALE_TAG[i]}</span></div>`
+  ).join("");
+}
+function showDrawMeter(on) { els.drawmeter.classList.toggle("show", on); }
+function updateDrawMeter(b) {
+  const km = boxSizeKm(b), lvl = levelForBox(b);
+  els.dmKm.textContent = km >= 10 ? Math.round(km).toLocaleString() + " km" : km.toFixed(1) + " km";
+  els.dmLevel.textContent = `L${lvl + 1} · ${SCALES[lvl].key} (${SCALES[lvl].km})`;
+  els.dmSteps.querySelectorAll(".dm-step").forEach((s) => {
+    const i = +s.dataset.i;
+    s.classList.toggle("on", i === lvl);
+    s.classList.toggle("past", i < lvl); // coarser levels that will be skipped
+  });
+  showDrawMeter(true);
+}
+
+/* ---- touch: one finger draws a window, two fingers pan/zoom ------------
+   We intercept on the map container in the CAPTURE phase (which runs before
+   MapLibre's own handlers on the descendant canvas). A single-finger gesture
+   is consumed for drawing (stopPropagation blocks the map's one-finger pan);
+   two+ fingers fall through to MapLibre for pan/pinch-zoom. */
+function setupTouchDraw() {
+  const cont = map.getContainer();
+  let tStart = null, tDrawing = false;
+  const llFromTouch = (t) => {
+    const r = map.getCanvas().getBoundingClientRect();
+    return map.unproject([t.clientX - r.left, t.clientY - r.top]);
+  };
+  const cancel = () => { tDrawing = false; tStart = null; setData("sel", empty()); showDrawMeter(false); };
+
+  cont.addEventListener("touchstart", (e) => {
+    if (running) return;
+    if (e.touches.length === 1) {
+      tDrawing = true; tStart = llFromTouch(e.touches[0]);
+      els.hint.classList.remove("show");
+      e.stopPropagation(); e.preventDefault(); // consume — draw, don't pan
+    } else {
+      cancel(); // 2+ fingers → let MapLibre pan/zoom
+    }
+  }, { capture: true, passive: false });
+
+  cont.addEventListener("touchmove", (e) => {
+    if (!tDrawing) return;
+    if (e.touches.length !== 1) { cancel(); return; }
+    const b = boxFrom(tStart, llFromTouch(e.touches[0]));
+    setData("sel", rectFeature(b));
+    updateDrawMeter(b);
+    e.stopPropagation(); e.preventDefault();
+  }, { capture: true, passive: false });
+
+  const finish = (e) => {
+    if (!tDrawing) return;
+    const t = e.changedTouches && e.changedTouches[0];
+    const start = tStart;
+    cancel();
+    if (!t || !start) return;
+    const b = boxFrom(start, llFromTouch(t));
+    if (Math.abs(b.e - b.w) > 0.05 && Math.abs(b.n - b.s) > 0.05) {
+      currentBBox = b;
+      setData("bbox", rectFeature(b));
+      els.hint.classList.remove("show");
+      els.begin.disabled = false;
+      els.sbWindow.textContent = `${spanKm(b)} km`;
+    }
+    e.stopPropagation();
+  };
+  cont.addEventListener("touchend", finish, { capture: true, passive: false });
+  cont.addEventListener("touchcancel", cancel, { capture: true });
 }
 
 /* ---- geometry helpers -------------------------------------------------- */
@@ -416,8 +514,10 @@ async function run() {
   log(`discovery bias: ${BIAS[bias].label} — ${BIAS[bias].blurb}`, "dim");
 
   let bbox = currentBBox, lastDecision = null;
+  const startLevel = levelForBox(currentBBox);
+  if (startLevel > 0) log(`window sized for ${SCALES[startLevel].key} — skipping ${startLevel} coarser level${startLevel > 1 ? "s" : ""}`, "dim");
 
-  for (let level = 0; level < SCALES.length; level++) {
+  for (let level = startLevel; level < SCALES.length; level++) {
     const scale = SCALES[level];
     setStatus(scale, level, bbox);
     await flyToBox(bbox, level === 0 ? 1600 : 2200);
@@ -513,6 +613,7 @@ window.addEventListener("DOMContentLoaded", () => {
     begin: $("begin"), log: $("log"),
     datasetsBtn: $("datasets-btn"), datasets: $("datasets"),
     reticle: $("reticle"), hint: $("hint"),
+    drawmeter: $("drawmeter"), dmKm: $("dm-km"), dmSteps: $("dm-steps"), dmLevel: $("dm-level"),
     sbBias: $("sb-bias"), sbCommodity: $("sb-commodity"), sbScale: $("sb-scale"), sbWindow: $("sb-window"),
     sbLevel: $("sb-level"), sbConf: $("sb-conf"), sbTarget: $("sb-target"),
     sbCoords: $("sb-coords"), sbClock: $("sb-clock"),
@@ -524,11 +625,13 @@ window.addEventListener("DOMContentLoaded", () => {
   // touch devices can't click-drag to draw — a default window is preloaded, so
   // they just pick a commodity/bias and Run; tune the hint accordingly.
   if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
-    els.hint.textContent = "Pick a commodity & bias, then tap Run analysis · pinch or +/− to zoom";
+    els.hint.textContent = "One finger to draw a window · two fingers to pan · pinch to zoom";
   }
 
   els.modelSel.value = localStorage.getItem("anthropic_model") || "claude-haiku-4-5";
   els.modelSel.addEventListener("change", () => localStorage.setItem("anthropic_model", els.modelSel.value));
+
+  buildDrawSteps();
 
   els.biasSel.value = getBias();
   setBiasStatus(getBias());
