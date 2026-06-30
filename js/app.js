@@ -399,6 +399,7 @@ async function run() {
   els.begin.disabled = els.mineralSel.disabled = els.biasSel.disabled = true;
   els.result.classList.remove("show");
   els.evidence.classList.remove("show");
+  els.hint.classList.remove("show");
   els.log.innerHTML = "";
   startClock();
 
@@ -519,6 +520,12 @@ window.addEventListener("DOMContentLoaded", () => {
     tpTbody: $("tp-tbody"), tpCount: $("tp-count"),
     evidence: $("evidence"), result: $("result"),
   });
+
+  // touch devices can't click-drag to draw — a default window is preloaded, so
+  // they just pick a commodity/bias and Run; tune the hint accordingly.
+  if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+    els.hint.textContent = "Pick a commodity & bias, then tap Run analysis · pinch or +/− to zoom";
+  }
 
   els.modelSel.value = localStorage.getItem("anthropic_model") || "claude-haiku-4-5";
   els.modelSel.addEventListener("change", () => localStorage.setItem("anthropic_model", els.modelSel.value));
