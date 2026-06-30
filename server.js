@@ -6,6 +6,8 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const geodata = require("./geodata");
+geodata.init();
 
 // --- load .env (local dev only; Railway injects real env vars) --------------
 try {
@@ -46,48 +48,85 @@ function rateLimited(ip) {
   return arr.length > RATE_MAX;
 }
 
+function distKmS(aLat, aLng, bLat, bLng) {
+  const dLat = aLat - bLat, dLng = (aLng - bLng) * Math.cos(((aLat + bLat) / 2 * Math.PI) / 180);
+  return Math.sqrt(dLat * dLat + dLng * dLng) * 111;
+}
+
+// fetch + cache a Macrostrat map unit (real bedrock lithology/age) for a point
+async function fetchMacro(lat, lng) {
+  const ck = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  const cached = macroCache.get(ck);
+  if (cached && Date.now() - cached.t < 6 * 3600e3) return cached.v;
+  let v = { ok: false };
+  try {
+    const u = `https://macrostrat.org/api/v2/geologic_units/map?lat=${lat}&lng=${lng}&format=json`;
+    const ac = AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
+    const r = await fetch(u, { headers: { accept: "application/json" }, signal: ac });
+    if (r.ok) {
+      const d = await r.json();
+      const u0 = ((d && d.success && d.success.data) || [])[0];
+      if (u0) {
+        const age = u0.b_int_name && u0.t_int_name
+          ? (u0.b_int_name === u0.t_int_name ? u0.b_int_name : `${u0.t_int_name}–${u0.b_int_name}`)
+          : (u0.age || null);
+        v = { ok: true, name: u0.name || u0.strat_name || null, lith: u0.lith || null, age,
+              b_age: u0.b_age, t_age: u0.t_age, units: ((d.success && d.success.data) || []).length };
+      }
+    }
+  } catch (_) { /* keep {ok:false} */ }
+  macroCache.set(ck, { t: Date.now(), v });
+  if (macroCache.size > 4000) macroCache.clear();
+  return v;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const p = decodeURIComponent(url.pathname);
 
-  // ---- health: tells the frontend whether real Claude is available ----
-  if (p === "/api/health") return json(res, 200, { configured: !!KEY });
+  // ---- health: real-Claude availability + real-data layer status ----
+  if (p === "/api/health") return json(res, 200, { configured: !!KEY, data: geodata.meta().ok });
+
+  // ---- dataset manifest (real layers + counts) for the UI ----
+  if (p === "/api/meta") return json(res, 200, geodata.meta());
+
+  // ---- named deposit markers for a commodity (USGS MRDS) ----
+  if (p === "/api/deposits" && req.method === "GET") {
+    const c = url.searchParams.get("commodity");
+    if (!geodata.COMMODITIES.includes(c)) return json(res, 400, { error: "bad commodity" });
+    return json(res, 200, { commodity: c, deposits: geodata.depositMarkers(c, 200) });
+  }
 
   // ---- Macrostrat geology proxy: real host-rock evidence for a point ----
-  // Returns a compact lithology/age summary from the Macrostrat map API.
-  // Server-side to dodge CORS and to add a tiny cache. Best-effort: any
-  // failure returns {ok:false} so the frontend degrades gracefully.
   if (p === "/api/macrostrat" && req.method === "GET") {
-    const lat = +url.searchParams.get("lat");
-    const lng = +url.searchParams.get("lng");
+    const lat = +url.searchParams.get("lat"), lng = +url.searchParams.get("lng");
     if (!isFinite(lat) || !isFinite(lng)) return json(res, 400, { error: "bad coords" });
-    const ck = `${lat.toFixed(2)},${lng.toFixed(2)}`;
-    const cached = macroCache.get(ck);
-    if (cached && Date.now() - cached.t < 6 * 3600e3) return json(res, 200, cached.v);
-    try {
-      const u = `https://macrostrat.org/api/v2/geologic_units/map?lat=${lat}&lng=${lng}&format=json`;
-      const ac = AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
-      const r = await fetch(u, { headers: { accept: "application/json" }, signal: ac });
-      if (!r.ok) return json(res, 200, { ok: false });
-      const d = await r.json();
-      const arr = (d && d.success && d.success.data) || [];
-      const u0 = arr[0];
-      if (!u0) { const v = { ok: false }; macroCache.set(ck, { t: Date.now(), v }); return json(res, 200, v); }
-      const ageName = u0.b_int_name && u0.t_int_name
-        ? (u0.b_int_name === u0.t_int_name ? u0.b_int_name : `${u0.t_int_name}–${u0.b_int_name}`)
-        : (u0.age || null);
-      const v = {
-        ok: true,
-        name: u0.name || u0.strat_name || null,
-        lith: u0.lith || null,
-        age: ageName,
-        b_age: u0.b_age, t_age: u0.t_age,
-        units: arr.length,
-      };
-      macroCache.set(ck, { t: Date.now(), v });
-      if (macroCache.size > 2000) macroCache.clear();
-      return json(res, 200, v);
-    } catch (_) { return json(res, 200, { ok: false }); }
+    return json(res, 200, await fetchMacro(lat, lng));
+  }
+
+  // ---- batch real-feature query: one call per zoom level (16 cells) ----
+  // body: {commodity, cells:[{w,s,e,n}...]}. Returns real tectonic + occurrence
+  // + live-geology features per cell so the agent reasons on actual data.
+  if (p === "/api/cells" && req.method === "POST") {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 200000) req.destroy(); });
+    req.on("end", async () => {
+      let q; try { q = JSON.parse(body); } catch { return json(res, 400, { error: "bad json" }); }
+      const c = q.commodity;
+      if (!geodata.COMMODITIES.includes(c)) return json(res, 400, { error: "bad commodity" });
+      const cells = Array.isArray(q.cells) ? q.cells.slice(0, 32) : [];
+      const out = await Promise.all(cells.map(async (b) => {
+        const lat = (b.s + b.n) / 2, lng = (b.w + b.e) / 2;
+        // occurrence search radius scales with the cell (clamped)
+        const halfKm = Math.max(distKmS(lat, b.w, lat, b.e), distKmS(b.s, lng, b.n, lng)) / 2;
+        const radiusKm = Math.max(25, Math.min(400, halfKm));
+        const f = geodata.features(c, lat, lng, radiusKm);
+        const macro = await fetchMacro(lat, lng);
+        return { ...f, macro, radiusKm: Math.round(radiusKm) };
+      }));
+      return json(res, 200, { commodity: c, cells: out });
+    });
+    return;
   }
 
   // ---- proxy: forward one Messages request to Anthropic, stream it back ----

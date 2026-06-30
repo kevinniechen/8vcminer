@@ -125,6 +125,7 @@ select:focus, input:focus { border-color: var(--accent); }
 .log-line.agent .msg { color: #b9c8d2; }
 .log-line.agent { border-left: 1px solid var(--line-2); padding-left: 7px; margin-left: 2px; }
 .log-line.ok .msg { color: var(--accent); }
+.log-line.data .msg { color: #5fb6c4; }   /* live-data citations stand out (teal) */
 .log-line.alert .msg { color: var(--text-bright); font-weight: 700; letter-spacing: .5px; }
 .log-line.alert { border-left: 2px solid var(--accent); padding-left: 7px; background: var(--accent-soft); }
 #log::-webkit-scrollbar, .tp-scroll::-webkit-scrollbar { width: 6px; }
@@ -334,15 +335,47 @@ select:focus, input:focus { border-color: var(--accent); }
 .ev-kv label { font-size: 8.5px; }
 .ev-kv b { font-family: var(--mono); font-size: 10.5px; color: var(--text-bright); font-weight: 500; text-align: right; }
 
-/* ---------------- deposit legend ---------------- */
+/* ---------------- live-data legend ---------------- */
 .legend {
   position: absolute; z-index: 5; right: 14px; bottom: 14px;
-  display: flex; align-items: center; gap: 7px;
-  background: rgba(9, 11, 14, 0.9); border: 1px solid var(--line-2); border-radius: 3px;
-  padding: 5px 10px; font-size: 9px; letter-spacing: .6px; color: var(--muted);
+  display: flex; flex-direction: column; gap: 5px;
+  background: rgba(9, 11, 14, 0.92); border: 1px solid var(--line-2); border-radius: 4px;
+  padding: 8px 11px; font-size: 9.5px; letter-spacing: .4px; color: var(--text);
   backdrop-filter: blur(3px);
 }
+.legend .lg-cap {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 8.5px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted);
+  margin-bottom: 1px;
+}
+.legend .lg-live { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.legend .lg-row { display: flex; align-items: center; gap: 7px; }
 .legend .lg-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--commodity); border: 1px solid #e7edf2; flex: none; }
+.legend .lg-geo { width: 9px; font-size: 9px; color: #5fb6c4; text-align: center; flex: none; }
+.legend .lg-box { width: 9px; height: 9px; border: 1.5px solid #54e29a; background: rgba(57, 217, 138, 0.12); flex: none; }
+
+/* ---------------- dynamic scale bar ---------------- */
+#scalebar {
+  position: absolute; z-index: 5; bottom: 14px; left: 50%; transform: translateX(-50%);
+  width: fit-content; text-align: center; pointer-events: none;
+}
+#scalebar .sb-dist {
+  display: block; font-family: var(--mono); font-size: 10px; color: var(--text-bright);
+  letter-spacing: .5px; margin-bottom: 3px; text-shadow: 0 0 4px #000, 0 0 4px #000;
+}
+#scalebar .sb-bar {
+  height: 6px; min-width: 30px; margin: 0 auto;
+  border: 1.5px solid rgba(231, 237, 242, .85); border-top: 0; box-shadow: 0 0 4px rgba(0,0,0,.6);
+}
+
+/* ---------------- on-box dimensions while dragging ---------------- */
+.boxlabel {
+  position: absolute; z-index: 6; transform: translate(-50%, calc(-100% - 7px));
+  background: rgba(8, 10, 12, .9); border: 1px solid #54e29a; border-radius: 3px;
+  padding: 2px 7px; font-size: 11px; color: #aef0c9; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .1s;
+}
+.boxlabel.show { opacity: 1; }
 
 /* ---------------- zoom controls ---------------- */
 #mapctrl {

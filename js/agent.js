@@ -38,50 +38,56 @@ const Agent = (() => {
   }
 
   /* ---- prompt ----------------------------------------------------------- */
+  function lithOf(f) {
+    return f && f.macro && f.macro.ok ? (f.macro.lith || f.macro.name || "?") : "no map";
+  }
   function buildPrompt(ctx) {
-    const { mineral, scale, bbox, cells, bias, macro, nearby } = ctx;
+    const { mineral, scale, bbox, cells, bias, level, nLevels } = ctx;
     const b = BIAS[bias] || BIAS.balanced;
-    const rows = cells.map((c) =>
-      `  cell ${c.index}: composite=${(c.composite * 100) | 0} | known=${(c.known * 100) | 0} | signal=${(c.signal * 100) | 0}`
-    ).join("\n");
-    const macroLine = macro && macro.ok
-      ? `HOST GEOLOGY (Macrostrat, window centroid): ${[macro.name, macro.lith, macro.age && "(" + macro.age + ")"].filter(Boolean).join(" ")}`
-      : `HOST GEOLOGY (Macrostrat): unavailable for this window`;
-    const nearLine = nearby && nearby.length
-      ? `KNOWN DEPOSITS IN/NEAR WINDOW: ` +
-        nearby.slice(0, 4).map((d) => `${d.n} (${mineral.symbol}, ${d.status}, ${d.src}, ${Math.round(d.distKm)} km)`).join("; ")
-      : `KNOWN DEPOSITS IN/NEAR WINDOW: none catalogued`;
+    const note = (typeof MS !== "undefined" && MS[mineral.id]) ? MS[mineral.id].note : mineral.model;
+    const rows = cells.map((c) => {
+      const f = c.f || {};
+      const seg = [
+        `comp=${(c.composite * 100) | 0}`, `known=${(c.known * 100) | 0}`, `signal=${(c.signal * 100) | 0}`,
+      ];
+      if (f.dSub != null) seg.push(`arc=${Math.round(f.dSub)}km`);
+      if (f.dFault != null) seg.push(`fault=${Math.round(f.dFault)}km`);
+      seg.push(`MRDS=${f.occCount || 0}`);
+      seg.push(`host=${String(lithOf(f)).slice(0, 26)}`);
+      return `  cell ${c.index}: ${seg.join(" | ")}`;
+    }).join("\n");
+    const coarse = level <= 1;
+    const guide = coarse
+      ? "COARSE scale: weight first-order tectonic setting (subduction arc / crustal faults) and province endowment (MRDS occurrence clustering)."
+      : "FINER scale: weight host lithology, nearest-occurrence proximity, and structural intersections.";
     return (
-      `TARGET COMMODITY: ${mineral.name} (${mineral.symbol})\n` +
-      `DEPOSIT MODEL: ${mineral.model}\n` +
-      `CURRENT SCALE: ${scale.key} (${scale.km}) — resolving toward a ${scale.sub}.\n` +
-      `SEARCH WINDOW: ${bbox.w.toFixed(2)}°,${bbox.s.toFixed(2)}° to ${bbox.e.toFixed(2)}°,${bbox.n.toFixed(2)}°\n` +
+      `TARGET: ${mineral.name} (${mineral.symbol})\n` +
+      `MINERAL SYSTEM: ${note}\n` +
+      `SCALE: ${scale.key} (${scale.km}) → resolving a ${scale.sub}. ${guide}\n` +
       `DISCOVERY BIAS: ${b.label} — ${b.blurb}.\n` +
-      macroLine + `\n` + nearLine + `\n\n` +
-      `The window is a 4×4 grid. Each cell reports two SEPARATE, REAL 0–100 channels —\n` +
-      `KNOWN (proximity to catalogued USMIN/global deposits) and SIGNAL (host-rock\n` +
-      `favourability from live Macrostrat geology, matched to the deposit model) —\n` +
-      `plus the bias-weighted COMPOSITE:\n` +
+      `WINDOW: ${bbox.w.toFixed(2)},${bbox.s.toFixed(2)} → ${bbox.e.toFixed(2)},${bbox.n.toFixed(2)}\n\n` +
+      `4×4 grid. Per cell, REAL data:\n` +
+      `  comp=bias composite · known=USGS MRDS occurrence endowment · signal=mineral-systems favourability\n` +
+      `  arc=km to nearest subduction zone (Bird PB2002) · fault=km to nearest GEM active fault\n` +
+      `  MRDS=USGS MRDS ${mineral.symbol} occurrences in cell radius · host=Macrostrat bedrock lithology\n` +
       rows +
-      `\n\nApply the discovery bias:\n` +
-      `  • Conservative → favour high KNOWN (brownfield, near production).\n` +
-      `  • Balanced → favour strong SIGNAL adjacent to KNOWN (permissive ground next to endowment).\n` +
-      `  • Frontier → favour high SIGNAL where KNOWN is low (greenfield look-alikes away from mined ground).\n` +
-      `Task: As the 8vcminer agent, write a SHORT field-log analysis (3–5 terse\n` +
-      `technical lines) — explicitly separating KNOWN EVIDENCE from NOVEL SIGNAL —\n` +
-      `then pick the single best cell to zoom into for the ${b.label} mandate.\n` +
-      `End with EXACTLY one line, nothing after it:\n` +
-      `${MARKER} {"cell": <index>, "confidence": <0-100>, "type": "known|novel", "headline": "<≤6 words>"}`
+      `\n\nApply the bias: Conservative→high KNOWN (brownfield); Balanced→strong SIGNAL next to KNOWN; ` +
+      `Frontier→high SIGNAL where KNOWN is low (favourable geology, no catalogued deposit = greenfield).\n` +
+      `Write a SHORT field log (3–5 terse lines) citing the REAL numbers (arc/fault distances, MRDS counts, ` +
+      `host rock) like an exploration geologist, separating KNOWN endowment from NOVEL mineral-systems signal. ` +
+      `Then pick ONE cell to zoom.\n` +
+      `End with EXACTLY one line: ${MARKER} {"cell":<index>,"confidence":<0-100>,"type":"known|novel","headline":"<≤6 words>"}`
     );
   }
 
   const SYSTEM =
-    "You are the 8vcminer agent, an autonomous mineral-exploration AI. You vector " +
-    "toward economic ore deposits by interpreting layered geoscience data. You keep " +
-    "two channels distinct: KNOWN evidence (catalogued deposits) versus geological SIGNAL " +
-    "(real host-rock favourability from Macrostrat), and you obey the operator's discovery bias. You " +
-    "reason like an economic geologist, commodity-specific and scale-aware. Voice: " +
-    "terse, technical, mission-control field log. No preamble, no markdown.";
+    "You are the 8vcminer agent, an autonomous mineral-exploration geologist. You vector toward " +
+    "undiscovered ore deposits using REAL data layers: USGS MRDS occurrences, subduction-zone & " +
+    "plate-boundary geometry (Bird PB2002), GEM active faults, and live Macrostrat bedrock geology. " +
+    "You apply mineral-systems criteria specific to the commodity and the exploration scale (coarse → " +
+    "tectonic setting & province endowment; fine → host lithology & structure). You keep KNOWN " +
+    "endowment distinct from NOVEL mineral-systems signal, obey the operator's discovery bias, and " +
+    "always cite the real numbers. Voice: terse, technical, mission-control field log. No markdown.";
 
   /* ---- decision parsing ------------------------------------------------- */
   function parseDecision(text, cells) {
@@ -146,29 +152,31 @@ const Agent = (() => {
     for (let i = 0; i < line.length; i += 3) { onToken(line.slice(i, i + 3)); await sleep(12); }
   }
   async function callSim(ctx, onToken) {
-    const { mineral, scale, bias, macro, nearby } = ctx;
+    const { mineral, scale, bias } = ctx;
     const b = BIAS[bias] || BIAS.balanced;
     const best = ctx.cells.reduce((acc, c) => (c.composite > ctx.cells[acc].composite ? c.index : acc), 0);
     const bc = ctx.cells[best];
+    const f = bc.f || {};
     const type = bc.known >= bc.signal && bias !== "frontier" ? "known" : "novel";
     const seed = mineral.id.length + ctx.level * 3 + best;
     const conf = Math.min(96, 56 + bc.composite * 40 + ctx.level * 4);
-    const nearTxt = nearby && nearby[0] ? `${nearby[0].n} (${Math.round(nearby[0].distKm)} km, ${nearby[0].src})` : "none catalogued";
-    const macroTxt = macro && macro.ok ? [macro.lith, macro.age && "(" + macro.age + ")"].filter(Boolean).join(" ") : "no map unit returned";
+    const nearTxt = f.nearest ? `${f.nearest.n} (${Math.round(f.nearest.distKm)} km, ${f.nearest.st})` : "none catalogued";
+    const host = f.macro && f.macro.ok ? (f.macro.lith || f.macro.name || "mapped unit") : "no map unit";
+    const tect = f.dSub != null ? `subduction arc ${Math.round(f.dSub)} km, fault ${Math.round(f.dFault)} km` : "intraplate setting";
     const lines = [
-      `${pick(["Scanning", "Integrating", "Resolving", "Vectoring on"], seed)} ${scale.key.toLowerCase()} window · bias=${b.label.toLowerCase()} for ${mineral.name}.`,
-      `KNOWN evidence: nearest catalogued deposit ${nearTxt}; cell ${best} known=${(bc.known * 100) | 0}.`,
-      `SIGNAL: Macrostrat host ${macroTxt}; cell ${best} favourability=${(bc.signal * 100) | 0}.`,
+      `${pick(["Scanning", "Integrating", "Resolving", "Vectoring on"], seed)} ${scale.key.toLowerCase()} window · ${b.label.toLowerCase()} mandate · ${mineral.name}.`,
+      `KNOWN: ${f.occCount || 0} USGS MRDS occurrences in cell ${best}; nearest ${nearTxt}; endowment ${(bc.known * 100) | 0}.`,
+      `SIGNAL: ${tect}; host ${host}; mineral-systems favourability ${(bc.signal * 100) | 0}.`,
       type === "known"
-        ? `Brownfield mandate → committing to high-endowment cell ${best}.`
-        : `Look-alike ground away from mined zones → committing greenfield cell ${best}.`,
+        ? `Brownfield mandate → high-endowment cell ${best}, committing.`
+        : `Favourable geology, low catalogued density → greenfield cell ${best}, committing.`,
     ];
     for (const l of lines) { await typeLine(l + "\n", onToken); await sleep(110); }
     return {
       cell: best, confidence: conf | 0, type,
       headline: type === "known"
         ? pick(["Brownfield extension", "Known-belt target", "Producing district"], seed)
-        : pick(["Greenfield look-alike", "Permissive corridor", "Novel signal zone"], seed),
+        : pick(["Greenfield look-alike", "Permissive arc corridor", "Novel signal zone"], seed),
     };
   }
 

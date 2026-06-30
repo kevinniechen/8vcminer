@@ -1,0 +1,29 @@
+{
+  "source": "USGS MRDS (mrdata.usgs.gov)",
+  "commodities": {
+    "copper": {
+      "occurrences": 44929,
+      "named": 2000
+    },
+    "gold": {
+      "occurrences": 84406,
+      "named": 2000
+    },
+    "lithium": {
+      "occurrences": 566,
+      "named": 328
+    },
+    "rare_earth": {
+      "occurrences": 1392,
+      "named": 773
+    },
+    "nickel": {
+      "occurrences": 2797,
+      "named": 1490
+    },
+    "uranium": {
+      "occurrences": 15346,
+      "named": 2000
+    }
+  }
+}

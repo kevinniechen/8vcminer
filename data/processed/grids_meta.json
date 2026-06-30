@@ -1,0 +1,8 @@
+{
+  "res": 0.5,
+  "nx": 720,
+  "ny": 360,
+  "lon0": -180.0,
+  "lat0": 90.0,
+  "order": "row-major north-to-south, lon -180..180"
+}

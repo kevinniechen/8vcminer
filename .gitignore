@@ -4,3 +4,6 @@ node_modules/
 js/config.local.js
 .DS_Store
 *.log
+
+# bulk geoscience source data (kept local)
+data/raw/

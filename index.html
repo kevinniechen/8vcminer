@@ -128,11 +128,19 @@
       <!-- evidence panel: Known evidence vs Novel signal -->
       <div id="evidence" class="epanel"></div>
 
-      <!-- known-deposit legend -->
+      <!-- live-data legend -->
       <div id="legend" class="legend">
-        <span class="lg-dot"></span>
-        <span>Known deposit · USMIN + global districts</span>
+        <div class="lg-cap"><span class="lg-live"></span>Live data</div>
+        <div class="lg-row"><span class="lg-dot"></span>Deposits · USGS MRDS (149k)</div>
+        <div class="lg-row"><span class="lg-geo">▦</span>Geology · Macrostrat · tectonics</div>
+        <div class="lg-row"><span class="lg-box"></span>Search window</div>
       </div>
+
+      <!-- dynamic map scale bar -->
+      <div id="scalebar"><span id="sb-dist" class="sb-dist">—</span><div id="sb-bar" class="sb-bar"></div></div>
+
+      <!-- live dimensions on the search box while dragging -->
+      <div id="boxlabel" class="boxlabel mono"></div>
 
       <!-- data sources / roadmap modal -->
       <div id="datasets" class="modal">

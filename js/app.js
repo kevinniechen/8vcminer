@@ -48,23 +48,23 @@ const START_BOXES = {
 
 const WORLD = { center: [10, 25], zoom: 1.4 };
 
-/* datasets shown in the Data sources panel */
+/* datasets shown in the Data sources panel (counts filled from /api/meta) */
 const DATASETS = {
   active: [
-    { name: "USGS USMIN", tag: "deposits", desc: "US mineral deposit & mine features digitized from USGS topographic maps. Tags US known-deposit evidence." },
-    { name: "Global critical-mineral districts", tag: "deposits", desc: "Curated major producing & known deposits worldwide across Cu, Au, Li, REE, Ni, U." },
-    { name: "Macrostrat bedrock geology", tag: "live api", desc: "Surface lithology + chronostratigraphic age sampled per grid cell. Drives the host-rock evidence AND the geological-favourability signal (matched to each commodity's deposit model)." },
+    { name: "USGS MRDS", tag: "149k occ.", desc: "Mineral Resources Data System — 149,000+ real mineral occurrences (commodity, development status, deposit type, host rock). Drives the KNOWN-endowment channel: occurrence density + nearest deposit per cell." },
+    { name: "Subduction zones — Bird PB2002", tag: "tectonic", desc: "Global plate-boundary model with classified subduction arcs. Distance-to-arc grid drives convergent-margin prospectivity (porphyry Cu, epithermal Au)." },
+    { name: "GEM Global Active Faults", tag: "13.7k", desc: "13,696 active fault traces. Distance-to-fault grid drives structural control (orogenic Au, fault-hosted systems)." },
+    { name: "Macrostrat bedrock geology", tag: "live api", desc: "Surface lithology + age sampled per cell live. Host-rock favourability matched to each commodity's mineral-systems model." },
+    { name: "Mineral-systems weighting", tag: "model", desc: "Per-commodity, per-scale weighting of the real layers (coarse → tectonic setting + endowment; fine → host lithology + structure)." },
     { name: "Esri World Imagery", tag: "basemap", desc: "Global satellite basemap, desaturated to a dark operational basemap." },
   ],
   soon: [
-    { name: "USGS MRDS", desc: "Full Mineral Resources Data System — tens of thousands of occurrences with commodity, deposit type & production." },
-    { name: "USGS SGMC", desc: "State Geologic Map Compilation — detailed lithology & structure polygons across the US." },
-    { name: "ASTER / Sentinel-2 alteration", desc: "Multispectral mineral mapping — clay, iron-oxide and silica alteration footprints." },
-    { name: "Gravity & magnetics", desc: "EMAG2 magnetic and WGM2012 gravity grids for crustal architecture and intrusive targeting." },
-    { name: "Copernicus / SRTM DEM", desc: "Terrain elevation and derived structural lineaments." },
-    { name: "Sentinel-1 InSAR", desc: "Surface deformation and structural mapping." },
+    { name: "Gravity & magnetics", desc: "EMAG2 magnetic + WGM2012 gravity grids → crustal architecture, intrusive & density targeting." },
+    { name: "ASTER / Sentinel-2 alteration", desc: "Multispectral mapping — clay, iron-oxide & silica alteration footprints at district scale." },
+    { name: "USGS SGMC + global lithology", desc: "Higher-resolution bedrock lithology & structure polygons beyond Macrostrat coverage." },
+    { name: "Craton & basement age", desc: "Archean/Proterozoic basement outlines for greenstone-Au and magmatic-Ni controls." },
+    { name: "Copernicus DEM", desc: "Terrain & derived structural lineaments / drainage for placer & basin targeting." },
     { name: "National geochemical surveys", desc: "Stream-sediment & soil geochemistry pathfinder anomalies." },
-    { name: "Public drillhole assays", desc: "Open intercept databases for grade continuity at deposit scale." },
   ],
 };
 
@@ -108,26 +108,32 @@ function setHeatRamp(color) {
   ]);
 }
 
-/* ---- known-deposit markers --------------------------------------------- */
-function depFeatures(mineral) {
-  return {
+/* ---- known-deposit markers (real USGS MRDS named deposits) -------------- */
+const _depCache = {};
+async function fetchDepositMarkers(id) {
+  if (_depCache[id]) return _depCache[id];
+  try {
+    const r = await fetch(`/api/deposits?commodity=${id}`);
+    const d = r.ok ? (await r.json()).deposits || [] : [];
+    return (_depCache[id] = d);
+  } catch { return (_depCache[id] = []); }
+}
+async function refreshDeposits(mineral, bias) {
+  if (!map || !map.getSource("deposits")) return;
+  const list = await fetchDepositMarkers(mineral.id);
+  map.getSource("deposits").setData({
     type: "FeatureCollection",
-    features: (KNOWN_DEPOSITS[mineral.id] || []).map((d) => ({
+    features: list.map((d) => ({
       type: "Feature",
-      properties: { name: d.n, src: d.src, status: d.status, w: _depW(d) },
+      properties: { name: d.n, status: d.st, w: Math.max(0.4, d.w || 0.5) },
       geometry: { type: "Point", coordinates: [d.lng, d.lat] },
     })),
-  };
-}
-function refreshDeposits(mineral, bias) {
-  if (!map || !map.getSource("deposits")) return;
-  map.getSource("deposits").setData(depFeatures(mineral));
+  });
   map.setPaintProperty("dep-dot", "circle-color", mineral.color);
-  // Frontier downweights known evidence → dim the catalogued deposits.
-  const dim = bias === "frontier";
+  const dim = bias === "frontier"; // Frontier downweights known endowment
   map.setPaintProperty("dep-dot", "circle-opacity", dim ? 0.28 : 0.85);
   map.setPaintProperty("dep-dot", "circle-stroke-opacity", dim ? 0.3 : 0.85);
-  if (map.getLayer("dep-label")) map.setPaintProperty("dep-label", "text-opacity", dim ? 0.25 : 0.8);
+  if (map.getLayer("dep-label")) map.setPaintProperty("dep-label", "text-opacity", dim ? 0.25 : 0.78);
 }
 
 /* ---- map setup --------------------------------------------------------- */
@@ -197,19 +203,19 @@ function initMap() {
 
     map.addLayer({
       id: "bbox-glow", type: "line", source: "bbox",
-      paint: { "line-color": "#d68a3a", "line-opacity": 0.16, "line-width": 5, "line-blur": 3 },
+      paint: { "line-color": "#22d97a", "line-opacity": 0.22, "line-width": 5, "line-blur": 3 },
     });
     map.addLayer({
       id: "bbox-core", type: "line", source: "bbox",
-      paint: { "line-color": "#e9b277", "line-width": 1.25 },
+      paint: { "line-color": "#7af0ad", "line-width": 1.4 },
     });
     map.addLayer({
       id: "sel-fill", type: "fill", source: "sel",
-      paint: { "fill-color": "#d68a3a", "fill-opacity": 0.06 },
+      paint: { "fill-color": "#39d98a", "fill-opacity": 0.08 },
     });
     map.addLayer({
       id: "sel-line", type: "line", source: "sel",
-      paint: { "line-color": "#d68a3a", "line-width": 1, "line-dasharray": [3, 2] },
+      paint: { "line-color": "#54e29a", "line-width": 1.1, "line-dasharray": [3, 2] },
     });
     map.addLayer({
       id: "winner-glow", type: "line", source: "winner",
@@ -227,7 +233,9 @@ function initMap() {
     map.getCanvas().style.cursor = "crosshair";
     els.hint.classList.add("show");
     setupTouchDraw();
+    updateScaleBar();
   });
+  map.on("move", updateScaleBar);
 
   // draw is always available — click-drag anywhere defines a window (no mode toggle)
   map.on("mousedown", (e) => {
@@ -240,11 +248,12 @@ function initMap() {
       const b = boxFrom(drawStart, e.lngLat);
       setData("sel", rectFeature(b));
       updateDrawMeter(b);
+      updateBoxLabel(b);
     } else els.sbCoords.textContent = fmtLL(e.lngLat.lat, e.lngLat.lng);
   });
   map.on("mouseup", (e) => {
     if (!drawing) return;
-    drawing = false; map.dragPan.enable(); setData("sel", empty()); showDrawMeter(false);
+    drawing = false; map.dragPan.enable(); setData("sel", empty()); showDrawMeter(false); hideBoxLabel();
     const b = boxFrom(drawStart, e.lngLat);
     if (Math.abs(b.e - b.w) > 0.05 && Math.abs(b.n - b.s) > 0.05) {
       currentBBox = b;
@@ -275,6 +284,34 @@ function updateDrawMeter(b) {
   showDrawMeter(true);
 }
 
+/* ---- dynamic scale bar ------------------------------------------------- */
+function niceRound(d) {
+  const pow = Math.pow(10, Math.floor(Math.log10(d)));
+  const f = d / pow;
+  return (f >= 5 ? 5 : f >= 2 ? 2 : 1) * pow;
+}
+function updateScaleBar() {
+  if (!map || !els.sbBar) return;
+  const lat = map.getCenter().lat;
+  const mpp = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, map.getZoom());
+  const dist = niceRound(mpp * 120); // metres for ~120px
+  els.sbBar.style.width = Math.round(dist / mpp) + "px";
+  els.sbDist.textContent = dist >= 1000 ? (dist / 1000).toLocaleString() + " km" : Math.round(dist) + " m";
+}
+
+/* ---- on-box dimensions while dragging ---------------------------------- */
+function updateBoxLabel(b) {
+  const p = map.project([(b.w + b.e) / 2, b.n]); // north edge centre
+  const midlat = (b.s + b.n) / 2;
+  const wkm = Math.round(Math.abs(b.e - b.w) * 111 * Math.cos((midlat * Math.PI) / 180));
+  const hkm = Math.round(Math.abs(b.n - b.s) * 111);
+  els.boxlabel.style.left = p.x + "px";
+  els.boxlabel.style.top = p.y + "px";
+  els.boxlabel.textContent = `${wkm.toLocaleString()} × ${hkm.toLocaleString()} km`;
+  els.boxlabel.classList.add("show");
+}
+function hideBoxLabel() { els.boxlabel.classList.remove("show"); }
+
 /* ---- touch: one finger draws a window, two fingers pan/zoom ------------
    We intercept on the map container in the CAPTURE phase (which runs before
    MapLibre's own handlers on the descendant canvas). A single-finger gesture
@@ -287,7 +324,7 @@ function setupTouchDraw() {
     const r = map.getCanvas().getBoundingClientRect();
     return map.unproject([t.clientX - r.left, t.clientY - r.top]);
   };
-  const cancel = () => { tDrawing = false; tStart = null; setData("sel", empty()); showDrawMeter(false); };
+  const cancel = () => { tDrawing = false; tStart = null; setData("sel", empty()); showDrawMeter(false); hideBoxLabel(); };
 
   cont.addEventListener("touchstart", (e) => {
     if (running) return;
@@ -306,6 +343,7 @@ function setupTouchDraw() {
     const b = boxFrom(tStart, llFromTouch(e.touches[0]));
     setData("sel", rectFeature(b));
     updateDrawMeter(b);
+    updateBoxLabel(b);
     e.stopPropagation(); e.preventDefault();
   }, { capture: true, passive: false });
 
@@ -346,25 +384,38 @@ function fmtLL(lat, lng) {
 }
 const cellCentroid = (c) => [(c.bounds.s + c.bounds.n) / 2, (c.bounds.w + c.bounds.e) / 2];
 
-/* ---- grid build + dual-channel scoring (both channels REAL) -----------
-   KNOWN   = proximity to catalogued deposits (USMIN + global districts)
-   SIGNAL  = host-rock favourability from live Macrostrat geology per cell  */
-async function buildGrid(b, mineral, bias) {
+/* ---- grid build: REAL mineral-systems scoring -------------------------
+   One /api/cells batch call returns, per cell, real features: distance to
+   subduction arcs & GEM faults, USGS MRDS occurrence density + nearest deposit,
+   and live Macrostrat host lithology. KNOWN = MRDS endowment; SIGNAL =
+   mineral-systems favourability (tectonics+structure+lithology), scale-weighted. */
+const EMPTY_FEAT = { dSub: null, dFault: null, dPlate: null, occDensity: 0, occCount: 0, occNearestKm: null, nearest: null, macro: { ok: false } };
+async function buildGrid(b, mineral, bias, level, nLevels) {
   const cw = (b.e - b.w) / GRID_N, ch = (b.n - b.s) / GRID_N;
   const cells = [];
   for (let r = 0; r < GRID_N; r++) {
     for (let c = 0; c < GRID_N; c++) {
       const cb = { w: b.w + c * cw, e: b.w + (c + 1) * cw, s: b.n - (r + 1) * ch, n: b.n - r * ch };
-      cells.push({ index: r * GRID_N + c, bounds: cb, known: knownCell(cb, mineral) });
+      cells.push({ index: r * GRID_N + c, bounds: cb });
     }
   }
-  // real geology for every cell centroid, in parallel (cached server- & client-side)
-  const macros = await Promise.all(cells.map((c) => { const [lat, lng] = cellCentroid(c); return fetchMacro(lat, lng); }));
+  let feats = [];
+  try {
+    const res = await fetch("/api/cells", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commodity: mineral.id, cells: cells.map((c) => c.bounds) }),
+    });
+    if (res.ok) feats = (await res.json()).cells || [];
+  } catch (_) { /* degrade to empty features */ }
+
   let maxC = 1e-9;
   cells.forEach((cell, i) => {
-    cell.macro = macros[i];
-    cell.signal = lithFavorability(mineral.id, macros[i]); // 0..1, real
-    cell.composite = composite(cell.known, cell.signal, bias); // 0..1
+    const f = feats[i] || EMPTY_FEAT;
+    cell.f = f;
+    cell.macro = f.macro;
+    cell.known = msKnown(f);                                  // real MRDS endowment
+    cell.signal = msSignal(mineral.id, f, level, nLevels);    // mineral-systems favourability
+    cell.composite = composite(cell.known, cell.signal, bias);
     if (cell.composite > maxC) maxC = cell.composite;
   });
   for (const cell of cells) cell.score = clamp01(cell.composite / maxC); // normalized for heat
@@ -415,13 +466,14 @@ function markWinnerRow(idx) {
 
 /* ---- evidence panel: Known evidence vs Novel signal -------------------- */
 function updateEvidence(cell, mineral, decision) {
-  const [lat, lng] = cellCentroid(cell);
-  const near = nearestDeposits(lat, lng, mineral, 2);
-  const gap = near[0] ? Math.round(near[0].distKm) : null;
+  const f = cell.f || EMPTY_FEAT;
+  const near = f.nearest;
+  const gap = f.occNearestKm != null ? Math.round(f.occNearestKm) : null;
   const host = macroSummary(cell.macro) || "no geologic-map coverage (offshore?)";
-  const nearHtml = near.length
-    ? near.map((d) => `<li><b>${d.n}</b> · ${d.status} · <span class="src">${d.src}</span> · ${Math.round(d.distKm)} km</li>`).join("")
-    : `<li class="none">none catalogued in range</li>`;
+  const km = (v) => (v == null ? "—" : Math.round(v).toLocaleString() + " km");
+  const nearHtml = near
+    ? `<li><b>${near.n}</b> · ${near.st}${near.ct ? " · " + near.ct : ""} · ${Math.round(near.distKm)} km</li>`
+    : `<li class="none">no catalogued occurrence in range</li>`;
   const typeTag = decision
     ? `<span class="etype ${decision.type}">${decision.type === "known" ? "KNOWN-LED" : "NOVEL-LED"}</span>`
     : "";
@@ -430,14 +482,16 @@ function updateEvidence(cell, mineral, decision) {
   els.evidence.innerHTML =
     `<div class="ev-head"><span>Evidence · C${String(cell.index).padStart(2, "0")}</span>${typeTag}</div>` +
     `<div class="ev-sec known">` +
-      `<div class="ev-t"><i class="dot k"></i>Known evidence <em>${Math.round(cell.known * 100)}</em></div>` +
+      `<div class="ev-t"><i class="dot k"></i>Known endowment <em>${Math.round(cell.known * 100)}</em></div>` +
       `<ul class="ev-list">${nearHtml}</ul>` +
-      `<div class="ev-kv"><label>Host (Macrostrat)</label><b>${host}</b></div>` +
+      `<div class="ev-kv"><label>MRDS occurrences (in radius)</label><b>${f.occCount || 0}</b></div>` +
     `</div>` +
     `<div class="ev-sec novel">` +
-      `<div class="ev-t"><i class="dot s"></i>Geological signal <em>${Math.round(cell.signal * 100)}</em></div>` +
-      `<div class="ev-kv"><label>Host favourability</label><b>${cell.signal >= 0.7 ? "favourable host" : cell.signal >= 0.4 ? "permissive" : "unfavourable"}</b></div>` +
-      `<div class="ev-kv"><label>Greenfield gap</label><b>${gap == null ? "—" : gap + " km to nearest known"}</b></div>` +
+      `<div class="ev-t"><i class="dot s"></i>Mineral-systems signal <em>${Math.round(cell.signal * 100)}</em></div>` +
+      `<div class="ev-kv"><label>Subduction arc</label><b>${km(f.dSub)}</b></div>` +
+      `<div class="ev-kv"><label>Nearest fault</label><b>${km(f.dFault)}</b></div>` +
+      `<div class="ev-kv"><label>Host (Macrostrat)</label><b>${host}</b></div>` +
+      `<div class="ev-kv"><label>Greenfield gap</label><b>${gap == null ? "—" : gap + " km to nearest occ."}</b></div>` +
     `</div>`;
 }
 
@@ -512,6 +566,11 @@ async function run() {
   log(`agent initialized · target ${mineral.name} (${mineral.symbol})`, "head");
   log(`backend ${await Agent.backend()}`, "dim");
   log(`discovery bias: ${BIAS[bias].label} — ${BIAS[bias].blurb}`, "dim");
+  log(`▦ live data stack`, "data");
+  log(`  · USGS MRDS — 149k mineral occurrences`, "data");
+  log(`  · Bird PB2002 subduction arcs · GEM active faults`, "data");
+  log(`  · Macrostrat bedrock geology (live)`, "data");
+  log(`  · mineral-systems weighting per commodity & scale`, "data");
 
   let bbox = currentBBox, lastDecision = null;
   const startLevel = levelForBox(currentBBox);
@@ -523,22 +582,25 @@ async function run() {
     await flyToBox(bbox, level === 0 ? 1600 : 2200);
 
     log(`${scale.key} · ${scale.km} · ${GRID_N}×${GRID_N} grid · ${scale.lens}`, "head");
-    log(`sampling Macrostrat host geology across ${GRID_N * GRID_N} cells…`, "dim");
+    log(`▦ querying real data layers across ${GRID_N * GRID_N} cells…`, "data");
 
-    const cells = await buildGrid(bbox, mineral, bias);
+    const cells = await buildGrid(bbox, mineral, bias, level, SCALES.length);
     renderGrid(cells);
     renderTelemetry(cells, scale);
 
-    const wlat = (bbox.s + bbox.n) / 2, wlng = (bbox.w + bbox.e) / 2;
-    const macro = await fetchMacro(wlat, wlng);
-    const ms = macroSummary(macro);
-    if (ms) log(`regional host: ${ms}`, "dim");
-    const nearby = nearestDeposits(wlat, wlng, mineral, 4);
+    // cite the REAL numbers this pass
+    const occTot = cells.reduce((s, c) => s + (c.f.occCount || 0), 0);
+    const top = cells.reduce((a, c) => (c.composite > a.composite ? c : a), cells[0]);
+    log(`▦ USGS MRDS · ${occTot} ${mineral.name} occurrence${occTot === 1 ? "" : "s"} in view`, "data");
+    if (top.f.dSub != null)
+      log(`▦ tectonics (best cell) · subduction ${Math.round(top.f.dSub)} km · fault ${Math.round(top.f.dFault)} km`, "data");
+    const ms = macroSummary(top.macro);
+    if (ms) log(`▦ Macrostrat host (best cell) · ${ms}`, "data");
 
     await scanReveal(cells);
 
     const body = log("", "agent");
-    const decision = await Agent.analyze({ mineral, scale, level, bbox, cells, bias, macro, nearby }, (c) => streamInto(body, c));
+    const decision = await Agent.analyze({ mineral, scale, level, nLevels: SCALES.length, bbox, cells, bias }, (c) => streamInto(body, c));
     lastDecision = decision;
 
     cells.forEach((c) => map.setFeatureState({ source: "grid", id: c.index }, { lit: c.index === decision.cell }));
@@ -560,15 +622,24 @@ async function run() {
   els.begin.disabled = els.mineralSel.disabled = els.biasSel.disabled = false;
 }
 
-/* ---- final site (honest: real geology + analogue ranges, no fake assays) */
+/* ---- final site (real geology + tectonics + MRDS; analogue ranges only) */
 async function finalize(b, mineral, decision) {
   await flyToBox(b, 2400);
   const lat = (b.s + b.n) / 2, lng = (b.w + b.e) / 2;
-  const macro = await fetchMacro(lat, lng);
+  let f = EMPTY_FEAT;
+  try {
+    const res = await fetch("/api/cells", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commodity: mineral.id, cells: [b] }),
+    });
+    if (res.ok) f = (await res.json()).cells[0] || EMPTY_FEAT;
+  } catch (_) {}
+  const macro = f.macro || { ok: false };
   const fav = Math.round(lithFavorability(mineral.id, macro) * 100);
   const host = macroSummary(macro) || "no geologic-map coverage";
-  const near = nearestDeposits(lat, lng, mineral, 1)[0];
+  const near = f.nearest;
   const gap = near ? Math.round(near.distKm) : null;
+  const km = (v) => (v == null ? "—" : Math.round(v).toLocaleString() + " km");
   const isNovel = decision.type === "novel";
   const g = mineral.grade, t = mineral.tonnage;
 
@@ -588,10 +659,12 @@ async function finalize(b, mineral, decision) {
     <div class="accent"><label>Host favourability</label><b>${fav}%</b></div>
     <div><label>Classification</label><b>${isNovel ? "Novel signal" : "Known / brownfield"}</b></div>
     <div class="r-wide"><label>Host geology · Macrostrat</label><b>${host}</b></div>
-    <div class="r-wide"><label>Nearest catalogued deposit</label><b>${near ? `${near.n} · ${near.status} · ${near.src} · ${gap} km` : "none in range"}</b></div>
-    <div><label>Analogue grade · ${mineral.symbol} model</label><b>${g.lo}–${g.hi} ${g.unit}</b></div>
-    <div><label>Analogue tonnage · model</label><b>${t.lo.toLocaleString()}–${t.hi.toLocaleString()} ${t.unit}</b></div>
-    <div class="r-note r-wide">Grade/tonnage are typical ranges for this deposit type (analogy only) — not measured at this location.</div>`;
+    <div><label>Subduction arc</label><b>${km(f.dSub)}</b></div>
+    <div><label>Nearest fault</label><b>${km(f.dFault)}</b></div>
+    <div class="r-wide"><label>Nearest MRDS deposit</label><b>${near ? `${near.n} · ${near.st} · ${gap} km (${f.occCount} occ. nearby)` : "none in range"}</b></div>
+    <div><label>Analogue grade · ${mineral.symbol}</label><b>${g.lo}–${g.hi} ${g.unit}</b></div>
+    <div><label>Analogue tonnage</label><b>${t.lo.toLocaleString()}–${t.hi.toLocaleString()} ${t.unit}</b></div>
+    <div class="r-note r-wide">Grade/tonnage are typical ranges for this deposit type (analogy only) — not measured here. Targeting uses real USGS MRDS, tectonic & Macrostrat layers.</div>`;
   els.result.classList.add("show");
 }
 
@@ -614,6 +687,7 @@ window.addEventListener("DOMContentLoaded", () => {
     datasetsBtn: $("datasets-btn"), datasets: $("datasets"),
     reticle: $("reticle"), hint: $("hint"),
     drawmeter: $("drawmeter"), dmKm: $("dm-km"), dmSteps: $("dm-steps"), dmLevel: $("dm-level"),
+    sbBar: $("sb-bar"), sbDist: $("sb-dist"), boxlabel: $("boxlabel"),
     sbBias: $("sb-bias"), sbCommodity: $("sb-commodity"), sbScale: $("sb-scale"), sbWindow: $("sb-window"),
     sbLevel: $("sb-level"), sbConf: $("sb-conf"), sbTarget: $("sb-target"),
     sbCoords: $("sb-coords"), sbClock: $("sb-clock"),
