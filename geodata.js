@@ -40,7 +40,7 @@ function loadOcc(c) {
 
 function init() {
   try {
-    for (const n of ["dist_subduction", "dist_plate", "dist_fault", "gravity", "grav_grad"]) grids[n] = loadGrid(n);
+    for (const n of ["dist_subduction", "dist_plate", "dist_fault", "gravity", "grav_grad", "magnetic", "mag_grad"]) grids[n] = loadGrid(n);
     const counts = {};
     for (const c of COMMODITIES) {
       occ[c] = loadOcc(c);
@@ -55,6 +55,7 @@ function init() {
         subduction: { name: "Bird (2003) PB2002 plate boundaries", note: "convergent-margin arcs" },
         faults: { name: "GEM Global Active Faults", note: "crustal structure proximity" },
         gravity: { name: "Sandwell & Smith free-air gravity", note: "crustal architecture + gradient edges" },
+        magnetic: { name: "EMAG2 magnetic anomaly (GMT)", note: "magnetite-bearing intrusions, IOCG, BIF" },
         geology: { name: "Macrostrat", note: "live bedrock lithology + age (per query)" },
       },
       totalOccurrences: Object.values(counts).reduce((a, b) => a + b.occurrences, 0),
@@ -130,6 +131,8 @@ function features(c, lat, lng, radiusKm) {
     dFault: sampleGrid(grids.dist_fault, lat, lng),
     gravMgal: sampleGrid(grids.gravity, lat, lng),
     gravGrad: sampleGrid(grids.grav_grad, lat, lng),
+    magNt: sampleGrid(grids.magnetic, lat, lng),
+    magGrad: sampleGrid(grids.mag_grad, lat, lng),
     occDensity: od.density,
     occCount: od.count,
     occNearestKm: od.nearestKm,

@@ -53,8 +53,9 @@ const Agent = (() => {
       if (f.dSub != null) seg.push(`arc=${Math.round(f.dSub)}km`);
       if (f.dFault != null) seg.push(`fault=${Math.round(f.dFault)}km`);
       if (f.gravGrad != null) seg.push(`gravGrad=${Math.round(f.gravGrad)}`);
+      if (f.magGrad != null) seg.push(`magGrad=${Math.round(f.magGrad)}`);
       seg.push(`MRDS=${f.occCount || 0}`);
-      seg.push(`host=${String(lithOf(f)).slice(0, 24)}`);
+      seg.push(`host=${String(lithOf(f)).slice(0, 22)}`);
       return `  cell ${c.index}: ${seg.join(" | ")}`;
     }).join("\n");
     const coarse = level <= 1;
@@ -70,7 +71,7 @@ const Agent = (() => {
       `4×4 grid. Per cell, REAL data:\n` +
       `  comp=bias composite · known=USGS MRDS occurrence endowment · signal=mineral-systems favourability\n` +
       `  arc=km to nearest subduction zone (Bird PB2002) · fault=km to nearest GEM active fault\n` +
-      `  gravGrad=free-air gravity horizontal gradient (mGal/°, crustal-architecture edges)\n` +
+      `  gravGrad=gravity gradient (mGal/°, crustal edges) · magGrad=magnetic gradient (nT/°, magnetite intrusions/IOCG/BIF)\n` +
       `  MRDS=USGS MRDS ${mineral.symbol} occurrences in cell radius · host=Macrostrat bedrock lithology\n` +
       rows +
       `\n\nApply the bias: Conservative→high KNOWN (brownfield); Balanced→strong SIGNAL next to KNOWN; ` +
