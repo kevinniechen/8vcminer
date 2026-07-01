@@ -167,6 +167,7 @@ function initMap() {
     map.addSource("bbox", { type: "geojson", data: empty() });
     map.addSource("sel", { type: "geojson", data: empty() });
     map.addSource("winner", { type: "geojson", data: empty() });
+    map.addSource("gridlabels", { type: "geojson", data: empty() });
     map.addSource("deposits", { type: "geojson", data: empty() });
 
     map.addLayer({
@@ -178,21 +179,19 @@ function initMap() {
     });
     map.addLayer({
       id: "grid-line", type: "line", source: "grid",
-      paint: { "line-color": "rgba(190,202,214,0.9)", "line-opacity": 0.12, "line-width": 0.8 },
+      paint: { "line-color": "rgba(200,212,224,0.9)", "line-opacity": 0.3, "line-width": 1 },
     });
-    // cell id label so the log/telemetry "C09" ↔ the actual grid square
+    // cell id + composite label at each cell centre (Point source → always renders)
     map.addLayer({
-      id: "grid-label", type: "symbol", source: "grid",
+      id: "grid-label", type: "symbol", source: "gridlabels",
       layout: {
-        "text-field": ["get", "label"],
+        "text-field": ["concat", ["get", "label"], "\n", ["to-string", ["get", "comp"]]],
         "text-font": ["Noto Sans Regular"],
-        "text-size": 12,
+        "text-size": 13, "text-line-height": 1.15,
         "text-allow-overlap": true, "text-ignore-placement": true,
       },
       paint: {
-        "text-color": ["case", ["boolean", ["feature-state", "lit"], false], "#ffffff", "#dfe8ef"],
-        "text-halo-color": "#05070a", "text-halo-width": 1.5,
-        "text-opacity": ["case", ["boolean", ["feature-state", "lit"], false], 1, 0.72],
+        "text-color": "#eef3f7", "text-halo-color": "#05070a", "text-halo-width": 1.6, "text-opacity": 0.92,
       },
     });
 
@@ -450,6 +449,14 @@ function renderGrid(cells) {
       type: "Feature", id: c.index,
       properties: { label: "C" + String(c.index).padStart(2, "0"), comp: Math.round((c.composite || 0) * 100) },
       geometry: { type: "Polygon", coordinates: [ring(c.bounds)] },
+    })),
+  });
+  setData("gridlabels", {
+    type: "FeatureCollection",
+    features: cells.map((c) => ({
+      type: "Feature",
+      properties: { label: "C" + String(c.index).padStart(2, "0"), comp: Math.round((c.composite || 0) * 100) },
+      geometry: { type: "Point", coordinates: [(c.bounds.w + c.bounds.e) / 2, (c.bounds.s + c.bounds.n) / 2] },
     })),
   });
   cells.forEach((c) => map.setFeatureState({ source: "grid", id: c.index }, { score: 0, lit: false }));

@@ -76,10 +76,13 @@ const Agent = (() => {
       rows +
       `\n\nApply the bias: Conservative→high KNOWN (brownfield); Balanced→strong SIGNAL next to KNOWN; ` +
       `Frontier→high SIGNAL where KNOWN is low (favourable geology, no catalogued deposit = greenfield).\n` +
-      `Read the FULL ${cells.length}-cell scan above. Write a SHORT field log (3–5 terse lines) that first notes the ` +
-      `overall scan (how many cells carry MRDS occurrences vs favourable geology), then cites specific cells by ` +
-      `index with their REAL numbers (arc/fault distances, gravity/magnetic edges, MRDS counts, host rock) like an ` +
-      `exploration geologist, separating KNOWN endowment from NOVEL mineral-systems signal. Then pick ONE cell to zoom.\n` +
+      `Read the FULL ${cells.length}-cell scan above and write a detailed field log (6–10 lines):\n` +
+      `  1) SCAN: how many cells carry MRDS occurrences vs favourable geology, and the overall pattern.\n` +
+      `  2) KNOWN ENDOWMENT: the top brownfield cells by MRDS count, citing arc/fault km and host rock.\n` +
+      `  3) NOVEL SIGNAL: the strongest mineral-systems cells with LOW known (favourable geophysics/geology, ` +
+      `few/no occurrences) — cite gravity/magnetic edges, arc/fault distances.\n` +
+      `  4) DECISION: which cell you commit to under the ${b.label} bias, and why.\n` +
+      `Cite specific cells by index (C##) with their REAL numbers throughout, like an exploration geologist.\n` +
       `End with EXACTLY one line: ${MARKER} {"cell":<index>,"confidence":<0-100>,"type":"known|novel","headline":"<≤6 words>"}`
     );
   }
@@ -119,7 +122,7 @@ const Agent = (() => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        model: getModel(), max_tokens: 700, system: SYSTEM,
+        model: getModel(), max_tokens: 1400, system: SYSTEM,
         messages: [{ role: "user", content: buildPrompt(ctx) }],
       }),
     });

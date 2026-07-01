@@ -141,7 +141,7 @@ const server = http.createServer(async (req, res) => {
       const payload = {
         model: ALLOWED_MODELS.has(q.model) ? q.model : "claude-haiku-4-5",
         stream: true,
-        max_tokens: Math.min(1024, Math.max(64, q.max_tokens || 600)),
+        max_tokens: Math.min(2048, Math.max(64, q.max_tokens || 600)),
         system: typeof q.system === "string" ? q.system.slice(0, 6000) : undefined,
         messages: Array.isArray(q.messages) ? q.messages.slice(0, 4) : [],
       };
