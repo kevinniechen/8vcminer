@@ -764,7 +764,7 @@ window.addEventListener("DOMContentLoaded", () => {
     els.hint.textContent = "One finger to draw a window · two fingers to pan · pinch to zoom";
   }
 
-  els.modelSel.value = localStorage.getItem("anthropic_model") || "claude-sonnet-5";
+  els.modelSel.value = localStorage.getItem("anthropic_model") || "claude-haiku-4-5";
   els.modelSel.addEventListener("change", () => localStorage.setItem("anthropic_model", els.modelSel.value));
 
   buildDrawSteps();

@@ -23,7 +23,7 @@ const Agent = (() => {
   let _configured = null; // cache of /api/health
 
   function getModel() {
-    return localStorage.getItem("anthropic_model") || "claude-sonnet-5";
+    return localStorage.getItem("anthropic_model") || "claude-haiku-4-5";
   }
   async function configured() {
     if (_configured !== null) return _configured;
