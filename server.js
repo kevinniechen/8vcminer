@@ -26,6 +26,7 @@ const MIME = {
   ".js": "text/javascript; charset=utf-8", ".json": "application/json",
   ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png",
   ".map": "application/json", ".webmanifest": "application/manifest+json",
+  ".pbf": "application/x-protobuf",
 };
 const ALLOWED_MODELS = new Set(["claude-sonnet-5", "claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]);
 

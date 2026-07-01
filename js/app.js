@@ -144,7 +144,7 @@ function initMap() {
     attributionControl: { compact: true },
     style: {
       version: 8,
-      glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
+      glyphs: "/fonts/{fontstack}/{range}.pbf", // self-hosted (external glyph servers were failing → no labels)
       sources: {
         sat: {
           type: "raster",
@@ -173,8 +173,9 @@ function initMap() {
     map.addLayer({
       id: "grid-fill", type: "fill", source: "grid",
       paint: {
-        "fill-color": "#0a0e12",
-        "fill-opacity": ["case", ["boolean", ["feature-state", "lit"], false], 0.5, 0.05],
+        "fill-color": "#0a0e12", // ramped to the commodity heat by setHeatRamp()
+        // opacity scales with composite score → prospective cells visibly glow
+        "fill-opacity": ["+", 0.12, ["*", 0.55, ["coalesce", ["feature-state", "score"], 0]]],
       },
     });
     map.addLayer({
