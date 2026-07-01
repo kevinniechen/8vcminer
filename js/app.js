@@ -180,7 +180,6 @@ function initMap() {
     map.addSource("bbox", { type: "geojson", data: empty() });
     map.addSource("sel", { type: "geojson", data: empty() });
     map.addSource("winner", { type: "geojson", data: empty() });
-    map.addSource("gridlabels", { type: "geojson", data: empty() });
     map.addSource("deposits", { type: "geojson", data: empty() });
 
     map.addLayer({
@@ -195,25 +194,7 @@ function initMap() {
       id: "grid-line", type: "line", source: "grid",
       paint: { "line-color": "rgba(200,212,224,0.9)", "line-opacity": 0.3, "line-width": 1 },
     });
-    // cell id + composite label at each cell centre (Point source → always renders)
-    map.addLayer({
-      id: "grid-label", type: "symbol", source: "gridlabels",
-      layout: {
-        // per-cell data: composite score (headline) + Known / Novel-signal (colour-coded)
-        "text-field": ["format",
-          ["to-string", ["get", "comp"]], { "font-scale": 1.35 },
-          "\n", {},
-          ["to-string", ["get", "known"]], { "font-scale": 0.72, "text-color": "#e6a55c" },
-          "  ", {},
-          ["to-string", ["get", "signal"]], { "font-scale": 0.72, "text-color": "#6ba7de" }],
-        "text-font": ["Noto Sans Regular"],
-        "text-size": 13, "text-line-height": 1.25,
-        "text-allow-overlap": true, "text-ignore-placement": true,
-      },
-      paint: {
-        "text-color": "#f2f6fa", "text-halo-color": "#05070a", "text-halo-width": 1.7, "text-opacity": 0.95,
-      },
-    });
+    // per-cell data is drawn as dense HTML HUD chips (see renderCellChips)
 
     // known deposits (the "Known evidence" layer)
     map.addLayer({
@@ -273,6 +254,7 @@ function initMap() {
     map.getCanvas().style.cursor = "crosshair";
     els.hint.classList.add("show");
     setupTouchDraw();
+    setupWheelPan();
     updateScaleBar();
   });
   map.on("move", updateScaleBar);
@@ -351,6 +333,20 @@ function updateBoxLabel(b) {
   els.boxlabel.classList.add("show");
 }
 function hideBoxLabel() { els.boxlabel.classList.remove("show"); }
+
+/* ---- macOS trackpad: two-finger swipe pans (a wheel event), pinch/mouse
+   wheel still zooms. Since left-drag draws a box, this is the pan gesture. */
+function setupWheelPan() {
+  const cont = map.getContainer();
+  const isTrackpadPan = (e) => e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 50);
+  cont.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey && isTrackpadPan(e)) {
+      e.preventDefault(); e.stopPropagation();           // hide from scrollZoom
+      map.panBy([e.deltaX, e.deltaY], { duration: 0 });  // two-finger pan
+    }
+    // ctrl+wheel (pinch-zoom) and discrete mouse wheels fall through → zoom
+  }, { capture: true, passive: false });
+}
 
 /* ---- touch: one finger draws a window, two fingers pan/zoom ------------
    We intercept on the map container in the CAPTURE phase (which runs before
@@ -471,21 +467,35 @@ function renderGrid(cells) {
       geometry: { type: "Polygon", coordinates: [ring(c.bounds)] },
     })),
   });
-  setData("gridlabels", {
-    type: "FeatureCollection",
-    features: cells.map((c) => ({
-      type: "Feature",
-      properties: {
-        comp: Math.round((c.composite || 0) * 100),
-        known: Math.round((c.known || 0) * 100),
-        signal: Math.round((c.signal || 0) * 100),
-        mrds: (c.f && c.f.occCount) || 0,
-      },
-      geometry: { type: "Point", coordinates: [(c.bounds.w + c.bounds.e) / 2, (c.bounds.s + c.bounds.n) / 2] },
-    })),
-  });
+  renderCellChips(cells);
   cells.forEach((c) => map.setFeatureState({ source: "grid", id: c.index }, { score: 0, lit: false }));
   setData("winner", empty());
+}
+
+/* dense HUD chip per cell: composite readout + known/signal micro-bars */
+let cellMarkers = [];
+function clearCellChips() { cellMarkers.forEach((m) => m.remove()); cellMarkers = []; }
+function renderCellChips(cells) {
+  clearCellChips();
+  for (const c of cells) {
+    const comp = Math.round((c.composite || 0) * 100);
+    const known = Math.round((c.known || 0) * 100);
+    const signal = Math.round((c.signal || 0) * 100);
+    const el = document.createElement("div");
+    el.className = "cellchip";
+    el.dataset.cell = c.index;
+    el.innerHTML =
+      `<span class="cc-comp">${comp}</span>` +
+      `<span class="cc-bars">` +
+        `<i class="cc-k"><b style="width:${known}%"></b></i>` +
+        `<i class="cc-s"><b style="width:${signal}%"></b></i>` +
+      `</span>`;
+    const lng = (c.bounds.w + c.bounds.e) / 2, lat = (c.bounds.s + c.bounds.n) / 2;
+    cellMarkers.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([lng, lat]).addTo(map));
+  }
+}
+function markWinnerChip(idx) {
+  cellMarkers.forEach((m) => { const el = m.getElement(); el.classList.toggle("win", +el.dataset.cell === idx); });
 }
 
 async function scanReveal(cells) {
@@ -720,6 +730,7 @@ async function run() {
     cells.forEach((c) => map.setFeatureState({ source: "grid", id: c.index }, { lit: c.index === decision.cell }));
     setData("winner", rectFeature(cells[decision.cell].bounds));
     markWinnerRow(decision.cell);
+    markWinnerChip(decision.cell);
     updateEvidence(cells[decision.cell], mineral, decision);
     els.sbConf.textContent = `${decision.confidence}%`;
     els.sbTarget.textContent = `C${String(decision.cell).padStart(2, "0")} — ${decision.headline}`;
@@ -786,6 +797,7 @@ async function finalize(b, mineral, decision) {
 function applyStartBox(fly = true) {
   currentBBox = { ...START_BOXES[els.mineralSel.value] };
   setData("bbox", rectFeature(currentBBox));
+  setData("grid", empty()); if (typeof clearCellChips === "function") clearCellChips();
   if (fly) flyToBox(currentBBox, 0);
   els.begin.disabled = false;
   els.sbWindow.textContent = `${spanKm(currentBBox)} km`;
