@@ -48,17 +48,30 @@ const START_BOXES = {
 
 const WORLD = { center: [10, 25], zoom: 1.4 };
 
+/* real data-source registry — every citation in the app links back here so the
+   user can verify nothing is LLM-hallucinated. */
+const SOURCES = {
+  mrds: { label: "USGS MRDS", url: "https://mrdata.usgs.gov/mrds/" },
+  subduction: { label: "Bird (2003) PB2002", url: "https://doi.org/10.1029/2001GC000252" },
+  faults: { label: "GEM Active Faults", url: "https://github.com/GEMScienceTools/gem-global-active-faults" },
+  gravity: { label: "Sandwell & Smith gravity", url: "https://topex.ucsd.edu/marine_grav/mar_grav.html" },
+  magnetic: { label: "EMAG2 (NOAA NCEI)", url: "https://www.ncei.noaa.gov/products/earth-magnetic-anomaly-grid-2" },
+  macrostrat: { label: "Macrostrat", url: "https://macrostrat.org" },
+  esri: { label: "Esri World Imagery", url: "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9" },
+};
+const mrdsUrl = (id) => (id ? `https://mrdata.usgs.gov/mrds/show-mrds.php?dep_id=${id}` : SOURCES.mrds.url);
+
 /* datasets shown in the Data sources panel (counts filled from /api/meta) */
 const DATASETS = {
   active: [
-    { name: "USGS MRDS", tag: "149k occ.", desc: "Mineral Resources Data System — 149,000+ real mineral occurrences (commodity, development status, deposit type, host rock). Drives the KNOWN-endowment channel: occurrence density + nearest deposit per cell." },
-    { name: "Subduction zones — Bird PB2002", tag: "tectonic", desc: "Global plate-boundary model with classified subduction arcs. Distance-to-arc grid drives convergent-margin prospectivity (porphyry Cu, epithermal Au)." },
-    { name: "GEM Global Active Faults", tag: "13.7k", desc: "13,696 active fault traces. Distance-to-fault grid drives structural control (orogenic Au, fault-hosted systems)." },
-    { name: "Sandwell free-air gravity", tag: "geophysics", desc: "Global 1-min free-air gravity. Horizontal-gradient grid (“gravity worms”) maps crustal-architecture edges that localise ore systems; gravity highs flag dense mafic-ultramafic crust (Ni)." },
-    { name: "EMAG2 magnetic anomaly", tag: "geophysics", desc: "Global magnetic anomaly grid. Magnetic-gradient edges flag magnetite-bearing intrusions, IOCG, BIF and mafic-ultramafic bodies — key for buried / blind targets and Ni, REE, IOCG-U." },
-    { name: "Macrostrat bedrock geology", tag: "live api", desc: "Surface lithology + age sampled per cell live. Host-rock favourability matched to each commodity's mineral-systems model." },
+    { name: "USGS MRDS", tag: "149k occ.", url: SOURCES.mrds.url, desc: "Mineral Resources Data System — 149,000+ real mineral occurrences (commodity, development status, deposit type, host rock). Drives the KNOWN-endowment channel: occurrence density + nearest deposit per cell." },
+    { name: "Subduction zones — Bird PB2002", tag: "tectonic", url: SOURCES.subduction.url, desc: "Global plate-boundary model with classified subduction arcs. Distance-to-arc grid drives convergent-margin prospectivity (porphyry Cu, epithermal Au)." },
+    { name: "GEM Global Active Faults", tag: "13.7k", url: SOURCES.faults.url, desc: "13,696 active fault traces. Distance-to-fault grid drives structural control (orogenic Au, fault-hosted systems)." },
+    { name: "Sandwell free-air gravity", tag: "geophysics", url: SOURCES.gravity.url, desc: "Global 1-min free-air gravity. Horizontal-gradient grid (“gravity worms”) maps crustal-architecture edges that localise ore systems; gravity highs flag dense mafic-ultramafic crust (Ni)." },
+    { name: "EMAG2 magnetic anomaly", tag: "geophysics", url: SOURCES.magnetic.url, desc: "Global magnetic anomaly grid. Magnetic-gradient edges flag magnetite-bearing intrusions, IOCG, BIF and mafic-ultramafic bodies — key for buried / blind targets and Ni, REE, IOCG-U." },
+    { name: "Macrostrat bedrock geology", tag: "live api", url: SOURCES.macrostrat.url, desc: "Surface lithology + age sampled per cell live. Host-rock favourability matched to each commodity's mineral-systems model." },
     { name: "Mineral-systems weighting", tag: "model", desc: "Per-commodity, per-scale weighting of the real layers (coarse → tectonic setting + endowment; fine → host lithology + structure)." },
-    { name: "Esri World Imagery", tag: "basemap", desc: "Global satellite basemap, desaturated to a dark operational basemap." },
+    { name: "Esri World Imagery", tag: "basemap", url: SOURCES.esri.url, desc: "Global satellite basemap, desaturated to a dark operational basemap." },
   ],
   soon: [
     { name: "ASTER / Sentinel-2 alteration", desc: "Multispectral mapping — clay, iron-oxide & silica alteration footprints at district scale." },
@@ -154,7 +167,7 @@ function initMap() {
           // "Map data not yet available" placeholder). Cap the native zoom so
           // MapLibre upscales an available lower tile instead of requesting it.
           maxzoom: 12,
-          attribution: "Imagery © Esri · Geology © Macrostrat · Deposits: USGS MRDS + public sources",
+          attribution: 'Imagery © <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> · Geology © <a href="https://macrostrat.org" target="_blank" rel="noopener">Macrostrat</a> · Deposits <a href="https://mrdata.usgs.gov/mrds/" target="_blank" rel="noopener">USGS MRDS</a>',
         },
       },
       layers: [{ id: "sat", type: "raster", source: "sat" }],
@@ -516,7 +529,7 @@ function updateEvidence(cell, mineral, decision) {
   const host = macroSummary(cell.macro) || "no geologic-map coverage (offshore?)";
   const km = (v) => (v == null ? "—" : Math.round(v).toLocaleString() + " km");
   const nearHtml = near
-    ? `<li><b>${near.n}</b> · ${near.st}${near.ct ? " · " + near.ct : ""} · ${Math.round(near.distKm)} km</li>`
+    ? `<li><a href="${mrdsUrl(near.id)}" target="_blank" rel="noopener"><b>${near.n}</b> ↗</a> · ${near.st}${near.ct ? " · " + near.ct : ""} · ${Math.round(near.distKm)} km</li>`
     : `<li class="none">no catalogued occurrence in range</li>`;
   const typeTag = decision
     ? `<span class="etype ${decision.type}">${decision.type === "known" ? "KNOWN-LED" : "NOVEL-LED"}</span>`
@@ -582,6 +595,32 @@ function log(text, cls = "") {
   return msg;
 }
 function streamInto(el, chunk) { el.textContent += chunk; els.log.scrollTop = els.log.scrollHeight; }
+// a log line that may contain links (content is app-controlled, never user input)
+const alink = (label, url) => `<a href="${url}" target="_blank" rel="noopener">${label} ↗</a>`;
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+// turn dataset names the agent mentions into links back to the real source
+function linkifySources(text) {
+  let h = escapeHtml(text);
+  const map = [
+    [/\bUSGS MRDS\b|\bMRDS\b/g, SOURCES.mrds.url],
+    [/\bMacrostrat\b/g, SOURCES.macrostrat.url],
+    [/\bBird PB2002\b|\bPB2002\b/g, SOURCES.subduction.url],
+    [/\bEMAG2\b/g, SOURCES.magnetic.url],
+    [/\bSandwell\b/g, SOURCES.gravity.url],
+    [/\bGEM\b/g, SOURCES.faults.url],
+  ];
+  for (const [re, url] of map) h = h.replace(re, (m) => `<a href="${url}" target="_blank" rel="noopener">${m}</a>`);
+  return h;
+}
+function logHTML(html, cls = "") {
+  const line = document.createElement("div");
+  line.className = "log-line " + cls;
+  const ts = document.createElement("span"); ts.className = "ts"; ts.textContent = `T+${fmtClock()}`;
+  const msg = document.createElement("span"); msg.className = "msg"; msg.innerHTML = html;
+  line.append(ts, msg);
+  els.log.appendChild(line);
+  els.log.scrollTop = els.log.scrollHeight;
+}
 // compact monospace row (no timestamp) — used to dump the per-cell feature matrix
 function logCell(text) {
   const line = document.createElement("div");
@@ -636,11 +675,11 @@ async function run() {
   log(`agent initialized · target ${mineral.name} (${mineral.symbol})`, "head");
   log(`backend ${await Agent.backend()}`, "dim");
   log(`discovery bias: ${BIAS[bias].label} — ${BIAS[bias].blurb}`, "dim");
-  log(`▦ live data stack`, "data");
-  log(`  · USGS MRDS — 149k mineral occurrences`, "data");
-  log(`  · Bird PB2002 subduction arcs · GEM active faults`, "data");
-  log(`  · Sandwell gravity + EMAG2 magnetics (geophysics)`, "data");
-  log(`  · Macrostrat bedrock geology (live)`, "data");
+  log(`▦ live data stack — public, citable sources (click to verify):`, "data");
+  logHTML(`  · ${alink("USGS MRDS — 149k occurrences", SOURCES.mrds.url)}`, "data");
+  logHTML(`  · ${alink("Bird PB2002 subduction", SOURCES.subduction.url)} · ${alink("GEM active faults", SOURCES.faults.url)}`, "data");
+  logHTML(`  · ${alink("Sandwell gravity", SOURCES.gravity.url)} · ${alink("EMAG2 magnetics", SOURCES.magnetic.url)}`, "data");
+  logHTML(`  · ${alink("Macrostrat bedrock geology", SOURCES.macrostrat.url)}`, "data");
   log(`  · mineral-systems weighting per commodity & scale`, "data");
 
   let bbox = currentBBox, lastDecision = null;
@@ -662,11 +701,11 @@ async function run() {
     // cite the REAL numbers this pass
     const occTot = cells.reduce((s, c) => s + (c.f.occCount || 0), 0);
     const top = cells.reduce((a, c) => (c.composite > a.composite ? c : a), cells[0]);
-    log(`▦ USGS MRDS · ${occTot} ${mineral.name} occurrence${occTot === 1 ? "" : "s"} in view`, "data");
+    logHTML(`▦ ${alink("USGS MRDS", SOURCES.mrds.url)} · ${occTot} ${mineral.name} occurrence${occTot === 1 ? "" : "s"} in view`, "data");
     if (top.f.dSub != null)
       log(`▦ geophysics (best cell) · subduction ${Math.round(top.f.dSub)} km · fault ${Math.round(top.f.dFault)} km · gravity-edge ${Math.round(top.f.gravGrad || 0)} mGal/° · magnetic-edge ${Math.round(top.f.magGrad || 0)} nT/°`, "data");
     const ms = macroSummary(top.macro);
-    if (ms) log(`▦ Macrostrat host (best cell) · ${ms}`, "data");
+    if (ms) logHTML(`▦ ${alink("Macrostrat", SOURCES.macrostrat.url)} host (best cell) · ${ms}`, "data");
 
     // explicit trajectory: the full per-cell feature matrix fed to the agent
     logFeatureMatrix(cells);
@@ -675,6 +714,7 @@ async function run() {
 
     const body = log("", "agent");
     const decision = await Agent.analyze({ mineral, scale, level, nLevels: SCALES.length, bbox, cells, bias }, (c) => streamInto(body, c));
+    body.innerHTML = linkifySources(body.textContent); // make the agent's own source mentions clickable
     lastDecision = decision;
 
     cells.forEach((c) => map.setFeatureState({ source: "grid", id: c.index }, { lit: c.index === decision.cell }));
@@ -735,10 +775,10 @@ async function finalize(b, mineral, decision) {
     <div class="r-wide"><label>Host geology · Macrostrat</label><b>${host}</b></div>
     <div><label>Subduction arc</label><b>${km(f.dSub)}</b></div>
     <div><label>Nearest fault</label><b>${km(f.dFault)}</b></div>
-    <div class="r-wide"><label>Nearest MRDS deposit</label><b>${near ? `${near.n} · ${near.st} · ${gap} km (${f.occCount} occ. nearby)` : "none in range"}</b></div>
+    <div class="r-wide"><label>Nearest MRDS deposit</label><b>${near ? `<a href="${mrdsUrl(near.id)}" target="_blank" rel="noopener">${near.n} ↗</a> · ${near.st} · ${gap} km (${f.occCount} occ. nearby)` : "none in range"}</b></div>
     <div><label>Analogue grade · ${mineral.symbol}</label><b>${g.lo}–${g.hi} ${g.unit}</b></div>
     <div><label>Analogue tonnage</label><b>${t.lo.toLocaleString()}–${t.hi.toLocaleString()} ${t.unit}</b></div>
-    <div class="r-note r-wide">Grade/tonnage are typical ranges for this deposit type (analogy only) — not measured here. Targeting uses real USGS MRDS, tectonic & Macrostrat layers.</div>`;
+    <div class="r-note r-wide">Grade/tonnage are typical ranges for this deposit type (analogy only) — not measured here. Targeting uses real ${alink("USGS MRDS", SOURCES.mrds.url)}, tectonic &amp; ${alink("Macrostrat", SOURCES.macrostrat.url)} layers.</div>`;
   els.result.classList.add("show");
 }
 
@@ -833,7 +873,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
 function renderDatasets() {
   $("ds-active").innerHTML = DATASETS.active.map((d) =>
-    `<div class="ds-item"><div class="ds-row"><b>${d.name}</b><span class="ds-tag">${d.tag}</span></div><p>${d.desc}</p></div>`
+    `<div class="ds-item"><div class="ds-row"><b>${d.url ? `<a href="${d.url}" target="_blank" rel="noopener">${d.name} ↗</a>` : d.name}</b><span class="ds-tag">${d.tag}</span></div><p>${d.desc}</p></div>`
   ).join("");
   $("ds-soon").innerHTML = DATASETS.soon.map((d) =>
     `<div class="ds-item soon"><div class="ds-row"><b>${d.name}</b><span class="ds-tag soon">soon</span></div><p>${d.desc}</p></div>`

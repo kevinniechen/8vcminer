@@ -26,7 +26,7 @@ COMMODITY = {
 DEVW = {"Producer": 1.0, "Past Producer": 0.85, "Prospect": 0.6,
         "Plant": 0.5, "Occurrence": 0.4, "Unknown": 0.35}
 
-cols = ["site_name", "latitude", "longitude", "country", "commod1", "commod2", "commod3",
+cols = ["dep_id", "site_name", "latitude", "longitude", "country", "commod1", "commod2", "commod3",
         "dep_type", "dev_stat", "prod_size", "hrock_type", "tectonic"]
 df = pd.read_csv(RAW, usecols=cols, dtype=str, low_memory=False)
 df["lat"] = pd.to_numeric(df["latitude"], errors="coerce")
@@ -66,6 +66,7 @@ for c, toks in COMMODITY.items():
     named = named.drop_duplicates("k").head(2000)
     deposits = [{
         "n": str(r.site_name)[:48], "lat": round(float(r.lat), 4), "lng": round(float(r.lng), 4),
+        "id": (str(r.dep_id) if pd.notna(r.dep_id) else None),  # → mrdata.usgs.gov/mrds/show-mrds.php?dep_id=
         "w": round(float(r.w), 2), "st": str(r.dev_stat) if pd.notna(r.dev_stat) else "Unknown",
         "dt": (str(r.dep_type)[:40] if pd.notna(r.dep_type) else None),
         "ct": (str(r.country)[:32] if pd.notna(r.country) else None),
