@@ -149,7 +149,12 @@ function initMap() {
         sat: {
           type: "raster",
           tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-          tileSize: 256, attribution: "Imagery © Esri · Geology © Macrostrat · Deposits: USGS USMIN + public sources",
+          tileSize: 256,
+          // Esri World Imagery lacks high-zoom tiles in remote areas (it serves a
+          // "Map data not yet available" placeholder). Cap the native zoom so
+          // MapLibre upscales an available lower tile instead of requesting it.
+          maxzoom: 12,
+          attribution: "Imagery © Esri · Geology © Macrostrat · Deposits: USGS MRDS + public sources",
         },
       },
       layers: [{ id: "sat", type: "raster", source: "sat" }],
