@@ -544,6 +544,30 @@ function log(text, cls = "") {
   return msg;
 }
 function streamInto(el, chunk) { el.textContent += chunk; els.log.scrollTop = els.log.scrollHeight; }
+// compact monospace row (no timestamp) — used to dump the per-cell feature matrix
+function logCell(text) {
+  const line = document.createElement("div");
+  line.className = "log-line cell";
+  const msg = document.createElement("span"); msg.className = "msg"; msg.textContent = text;
+  line.appendChild(msg);
+  els.log.appendChild(line);
+  els.log.scrollTop = els.log.scrollHeight;
+}
+// dump the exact 16-cell feature matrix the agent receives this pass
+function logFeatureMatrix(cells) {
+  const withOcc = cells.filter((c) => (c.f.occCount || 0) > 0).length;
+  const withGeol = cells.filter((c) => c.f.macro && c.f.macro.ok).length;
+  log(`▦ feature matrix → agent · ${cells.length} cells (${withOcc} with MRDS, ${withGeol} with geology)`, "data");
+  logCell("cell  arc  flt grav  mag MRDS  host");
+  for (const c of cells) {
+    const f = c.f || {};
+    const n = (v) => (v == null ? "  —" : String(Math.round(v)).padStart(3));
+    const lith = f.macro && f.macro.ok ? (f.macro.lith || f.macro.name || "unit") : "no-map";
+    logCell(
+      `C${String(c.index).padStart(2, "0")} ${n(f.dSub)} ${n(f.dFault)} ${String(Math.round(f.gravGrad || 0)).padStart(4)} ${String(Math.round(f.magGrad || 0)).padStart(4)} ${String(f.occCount || 0).padStart(4)}  ${String(lith).slice(0, 20)}`
+    );
+  }
+}
 function setStatus(scale, level, bbox) {
   els.sbScale.textContent = scale.key;
   els.sbWindow.textContent = `${spanKm(bbox)} km`;
@@ -605,6 +629,9 @@ async function run() {
       log(`▦ geophysics (best cell) · subduction ${Math.round(top.f.dSub)} km · fault ${Math.round(top.f.dFault)} km · gravity-edge ${Math.round(top.f.gravGrad || 0)} mGal/° · magnetic-edge ${Math.round(top.f.magGrad || 0)} nT/°`, "data");
     const ms = macroSummary(top.macro);
     if (ms) log(`▦ Macrostrat host (best cell) · ${ms}`, "data");
+
+    // explicit trajectory: the full per-cell feature matrix fed to the agent
+    logFeatureMatrix(cells);
 
     await scanReveal(cells);
 

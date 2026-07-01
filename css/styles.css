@@ -126,6 +126,8 @@ select:focus, input:focus { border-color: var(--accent); }
 .log-line.agent { border-left: 1px solid var(--line-2); padding-left: 7px; margin-left: 2px; }
 .log-line.ok .msg { color: var(--accent); }
 .log-line.data .msg { color: #5fb6c4; }   /* live-data citations stand out (teal) */
+.log-line.cell { padding: 0; }
+.log-line.cell .msg { font-family: var(--mono); font-size: 9.5px; line-height: 1.35; color: #6b7883; white-space: pre; }
 .log-line.alert .msg { color: var(--text-bright); font-weight: 700; letter-spacing: .5px; }
 .log-line.alert { border-left: 2px solid var(--accent); padding-left: 7px; background: var(--accent-soft); }
 #log::-webkit-scrollbar, .tp-scroll::-webkit-scrollbar { width: 6px; }
