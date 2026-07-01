@@ -355,6 +355,10 @@ select:focus, input:focus { border-color: var(--accent); }
 .legend .lg-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--commodity); border: 1px solid #e7edf2; flex: none; }
 .legend .lg-geo { width: 9px; font-size: 9px; color: #5fb6c4; text-align: center; flex: none; }
 .legend .lg-box { width: 9px; height: 9px; border: 1.5px solid #54e29a; background: rgba(57, 217, 138, 0.12); flex: none; }
+.legend .lg-cellkey { margin-top: 1px; padding-top: 5px; border-top: 1px solid var(--line); color: var(--muted); }
+.legend .lg-cellkey b { color: var(--text-bright); font-weight: 600; }
+.legend .k-known { color: #e6a55c; }
+.legend .k-signal { color: #6ba7de; }
 
 /* ---------------- dynamic scale bar ---------------- */
 #scalebar {

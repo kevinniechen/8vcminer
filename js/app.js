@@ -186,13 +186,19 @@ function initMap() {
     map.addLayer({
       id: "grid-label", type: "symbol", source: "gridlabels",
       layout: {
-        "text-field": ["concat", ["get", "label"], "\n", ["to-string", ["get", "comp"]]],
+        // per-cell data: composite score (headline) + Known / Novel-signal (colour-coded)
+        "text-field": ["format",
+          ["to-string", ["get", "comp"]], { "font-scale": 1.35 },
+          "\n", {},
+          ["to-string", ["get", "known"]], { "font-scale": 0.72, "text-color": "#e6a55c" },
+          "  ", {},
+          ["to-string", ["get", "signal"]], { "font-scale": 0.72, "text-color": "#6ba7de" }],
         "text-font": ["Noto Sans Regular"],
-        "text-size": 13, "text-line-height": 1.15,
+        "text-size": 13, "text-line-height": 1.25,
         "text-allow-overlap": true, "text-ignore-placement": true,
       },
       paint: {
-        "text-color": "#eef3f7", "text-halo-color": "#05070a", "text-halo-width": 1.6, "text-opacity": 0.92,
+        "text-color": "#f2f6fa", "text-halo-color": "#05070a", "text-halo-width": 1.7, "text-opacity": 0.95,
       },
     });
 
@@ -456,7 +462,12 @@ function renderGrid(cells) {
     type: "FeatureCollection",
     features: cells.map((c) => ({
       type: "Feature",
-      properties: { label: "C" + String(c.index).padStart(2, "0"), comp: Math.round((c.composite || 0) * 100) },
+      properties: {
+        comp: Math.round((c.composite || 0) * 100),
+        known: Math.round((c.known || 0) * 100),
+        signal: Math.round((c.signal || 0) * 100),
+        mrds: (c.f && c.f.occCount) || 0,
+      },
       geometry: { type: "Point", coordinates: [(c.bounds.w + c.bounds.e) / 2, (c.bounds.s + c.bounds.n) / 2] },
     })),
   });
