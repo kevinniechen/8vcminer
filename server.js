@@ -27,7 +27,7 @@ const MIME = {
   ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png",
   ".map": "application/json", ".webmanifest": "application/manifest+json",
 };
-const ALLOWED_MODELS = new Set(["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]);
+const ALLOWED_MODELS = new Set(["claude-sonnet-5", "claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]);
 
 function json(res, code, obj) {
   res.writeHead(code, { "content-type": "application/json" });

@@ -180,6 +180,21 @@ function initMap() {
       id: "grid-line", type: "line", source: "grid",
       paint: { "line-color": "rgba(190,202,214,0.9)", "line-opacity": 0.12, "line-width": 0.8 },
     });
+    // cell id label so the log/telemetry "C09" ↔ the actual grid square
+    map.addLayer({
+      id: "grid-label", type: "symbol", source: "grid",
+      layout: {
+        "text-field": ["get", "label"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 12,
+        "text-allow-overlap": true, "text-ignore-placement": true,
+      },
+      paint: {
+        "text-color": ["case", ["boolean", ["feature-state", "lit"], false], "#ffffff", "#dfe8ef"],
+        "text-halo-color": "#05070a", "text-halo-width": 1.5,
+        "text-opacity": ["case", ["boolean", ["feature-state", "lit"], false], 1, 0.72],
+      },
+    });
 
     // known deposits (the "Known evidence" layer)
     map.addLayer({
@@ -431,7 +446,11 @@ async function buildGrid(b, mineral, bias, level, nLevels) {
 function renderGrid(cells) {
   setData("grid", {
     type: "FeatureCollection",
-    features: cells.map((c) => ({ type: "Feature", id: c.index, properties: {}, geometry: { type: "Polygon", coordinates: [ring(c.bounds)] } })),
+    features: cells.map((c) => ({
+      type: "Feature", id: c.index,
+      properties: { label: "C" + String(c.index).padStart(2, "0"), comp: Math.round((c.composite || 0) * 100) },
+      geometry: { type: "Polygon", coordinates: [ring(c.bounds)] },
+    })),
   });
   cells.forEach((c) => map.setFeatureState({ source: "grid", id: c.index }, { score: 0, lit: false }));
   setData("winner", empty());
@@ -738,7 +757,7 @@ window.addEventListener("DOMContentLoaded", () => {
     els.hint.textContent = "One finger to draw a window · two fingers to pan · pinch to zoom";
   }
 
-  els.modelSel.value = localStorage.getItem("anthropic_model") || "claude-haiku-4-5";
+  els.modelSel.value = localStorage.getItem("anthropic_model") || "claude-sonnet-5";
   els.modelSel.addEventListener("change", () => localStorage.setItem("anthropic_model", els.modelSel.value));
 
   buildDrawSteps();
